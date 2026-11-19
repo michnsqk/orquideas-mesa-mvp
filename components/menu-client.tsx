@@ -685,7 +685,7 @@ export function MenuClient({
                 <Search size={19} aria-hidden="true" className="shrink-0 text-neutral-700 dark:text-neutral-300" />
                 <span className="sr-only">Buscar platillos</span>
                 <input
-                  className="min-w-0 flex-1 bg-transparent text-sm text-neutral-900 outline-none placeholder:text-neutral-500 dark:text-neutral-100 dark:placeholder:text-neutral-400"
+                  className="min-w-0 flex-1 bg-transparent text-base text-neutral-900 outline-none placeholder:text-neutral-500 dark:text-neutral-100 dark:placeholder:text-neutral-400"
                   placeholder="Busca chilaquiles, molletes, café…"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
@@ -1281,7 +1281,7 @@ function ProductDialog({
           <label className="mt-5 block text-sm font-bold">
             Observaciones
             <textarea
-              className="mt-2 min-h-20 w-full resize-none rounded-xl border border-[var(--line)] bg-white p-3 font-normal outline-none transition focus:border-[var(--green)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+              className="mt-2 min-h-20 w-full resize-none rounded-xl border border-[var(--line)] bg-white p-3 text-base font-normal outline-none transition focus:border-[var(--green)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
               maxLength={180}
               placeholder="Ej. Sin cebolla, salsa aparte…"
               value={notes}
@@ -1469,7 +1469,7 @@ function CartDrawer({
                   </div>
                 )}
                 <input
-                  className="mt-2 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[var(--green)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+                  className="mt-2 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-base outline-none transition focus:border-[var(--green)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
                   placeholder="Nota para este platillo…"
                   maxLength={250}
                   value={item.notes || ""}
@@ -1512,7 +1512,7 @@ function CartDrawer({
         <label className="mt-4 block text-sm font-bold">
           Observaciones generales
           <textarea
-            className="mt-2 min-h-20 w-full resize-none rounded-2xl border border-[var(--line)] bg-white p-3 font-normal outline-none transition focus:border-[var(--green)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+            className="mt-2 min-h-20 w-full resize-none rounded-2xl border border-[var(--line)] bg-white p-3 text-base font-normal outline-none transition focus:border-[var(--green)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
             maxLength={250}
             placeholder="Algo que debamos saber…"
             value={notes}

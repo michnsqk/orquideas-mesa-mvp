@@ -142,6 +142,7 @@ select {
 
 button {
   cursor: pointer;
+  touch-action: manipulation;
   transition:
     transform 120ms ease,
     background-color 120ms ease,
@@ -312,6 +313,21 @@ select:focus {
 .focus-ring:focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
+}
+
+/* ── Zoom en celular ──
+   iOS Safari hace zoom automático al enfocar un campo de texto menor a 16px
+   y no lo deshace al salir del campo. En pantallas táctiles todos los campos
+   de texto usan 16px como mínimo. El viewport ya está bien (device-width,
+   zoom libre), así que esto no bloquea el zoom del usuario: solo evita el
+   zoom forzado al tocar un campo.
+   La regla va sin capa para que gane sobre las utilidades de Tailwind. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }
 
 /* Foco de teclado consistente en toda la app (a11y) */
