@@ -7,6 +7,8 @@ export type WaiterCall = {
   id: string;
   tableCode: string;
   timestamp: string;
+  kind?: "assist" | "bill";
+  paymentPreference?: "efectivo" | "tarjeta" | "transferencia";
 };
 
 export type AppChannelPayload = {

@@ -12,6 +12,7 @@ import {
   Flame,
   Minus,
   Plus,
+  Receipt,
   RefreshCw,
   Search,
   Trash2,
@@ -263,10 +264,26 @@ function StaffBoard({ role }: { role: StaffRole }) {
             beep();
             navigator.vibrate?.([600, 200, 600]);
             if ("Notification" in window && Notification.permission === "granted") {
-              new Notification(`Mesa ${waiterCall.tableCode} solicita atención`, {
-                body: "El cliente está llamando al mesero.",
-                tag: `orquideas-call-${waiterCall.tableCode}`
-              });
+              const isBill = waiterCall.kind === "bill";
+              const paymentLabel =
+                waiterCall.paymentPreference === "tarjeta"
+                  ? "Tarjeta"
+                  : waiterCall.paymentPreference === "transferencia"
+                    ? "Transferencia"
+                    : waiterCall.paymentPreference === "efectivo"
+                      ? "Efectivo"
+                      : null;
+              new Notification(
+                isBill
+                  ? `Mesa ${waiterCall.tableCode} pide la cuenta${paymentLabel ? ` (${paymentLabel})` : ""}`
+                  : `Mesa ${waiterCall.tableCode} solicita atención`,
+                {
+                  body: isBill
+                    ? `El cliente solicitó la cuenta${paymentLabel ? ` · Pago con ${paymentLabel}` : ""}.`
+                    : "El cliente está llamando al mesero.",
+                  tag: `orquideas-call-${waiterCall.tableCode}`
+                }
+              );
             }
             return [...current.slice(-9), waiterCall];
           });
@@ -659,50 +676,82 @@ function StaffBoard({ role }: { role: StaffRole }) {
 
       {role === "waiter" && waiterCalls.length > 0 && (
         <div className="fixed inset-x-4 top-4 z-[55] mx-auto max-w-lg space-y-2">
-          {waiterCalls.map((call) => (
-            <div
-              key={call.id}
-              aria-live="polite"
-              className="animate-pop flex items-center gap-3 rounded-2xl border-2 border-[var(--terracotta)] bg-[#f8e8e2] p-4 shadow-2xl"
-              role="alert"
-            >
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--terracotta)] text-white">
-                <Hand size={22} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold uppercase tracking-wider text-[var(--terracotta)]">
-                  Cliente solicita atención
-                </p>
-                <strong className="font-display text-xl">Mesa {call.tableCode}</strong>
-                <p className="text-xs text-[var(--terracotta)]/70">
-                  {new Date(call.timestamp).toLocaleTimeString("es-MX", {
-                    hour: "2-digit",
-                    minute: "2-digit"
-                  })}
-                </p>
-              </div>
-              <button
-                aria-label={`Atender mesa ${call.tableCode}`}
-                className="focus-ring shrink-0 rounded-xl bg-[var(--terracotta)] px-4 py-2.5 text-sm font-bold text-white hover:opacity-90"
-                onClick={() => {
-                  setTableFilter(call.tableCode);
-                  setStatusFilter("all");
-                  setWaiterCalls((current) => current.filter((c) => c.id !== call.id));
-                }}
+          {waiterCalls.map((call) => {
+            const isBill = call.kind === "bill";
+            const paymentText =
+              call.paymentPreference === "tarjeta"
+                ? "💳 Tarjeta"
+                : call.paymentPreference === "transferencia"
+                  ? "📲 Transferencia"
+                  : call.paymentPreference === "efectivo"
+                    ? "💵 Efectivo"
+                    : null;
+            return (
+              <div
+                key={call.id}
+                aria-live="polite"
+                className={`animate-pop flex items-center gap-3 rounded-2xl border-2 p-4 shadow-2xl ${
+                  isBill
+                    ? "border-[var(--brown)] bg-[#faf1e2]"
+                    : "border-[var(--terracotta)] bg-[#f8e8e2]"
+                }`}
+                role="alert"
               >
-                Ver mesa
-              </button>
-              <button
-                aria-label="Descartar llamado"
-                className="focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/60"
-                onClick={() =>
-                  setWaiterCalls((current) => current.filter((c) => c.id !== call.id))
-                }
-              >
-                <XCircle size={18} />
-              </button>
-            </div>
-          ))}
+                <div
+                  className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-white ${
+                    isBill ? "bg-[var(--brown)]" : "bg-[var(--terracotta)]"
+                  }`}
+                >
+                  {isBill ? <Receipt size={22} /> : <Hand size={22} />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={`text-xs font-bold uppercase tracking-wider ${
+                      isBill ? "text-[var(--brown)]" : "text-[var(--terracotta)]"
+                    }`}
+                  >
+                    {isBill ? "Solicita la cuenta" : "Cliente solicita atención"}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="font-display text-xl">Mesa {call.tableCode}</strong>
+                    {paymentText && (
+                      <span className="rounded-full bg-white/90 px-2.5 py-0.5 text-xs font-bold text-[var(--brown-dark)] shadow-xs">
+                        {paymentText}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-neutral-600">
+                    {new Date(call.timestamp).toLocaleTimeString("es-MX", {
+                      hour: "2-digit",
+                      minute: "2-digit"
+                    })}
+                  </p>
+                </div>
+                <button
+                  aria-label={`Atender mesa ${call.tableCode}`}
+                  className={`focus-ring shrink-0 rounded-xl px-4 py-2.5 text-sm font-bold text-white hover:opacity-90 ${
+                    isBill ? "bg-[var(--brown)]" : "bg-[var(--terracotta)]"
+                  }`}
+                  onClick={() => {
+                    setTableFilter(call.tableCode);
+                    setStatusFilter("all");
+                    setWaiterCalls((current) => current.filter((c) => c.id !== call.id));
+                  }}
+                >
+                  Ver mesa
+                </button>
+                <button
+                  aria-label="Descartar llamado"
+                  className="focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/60"
+                  onClick={() =>
+                    setWaiterCalls((current) => current.filter((c) => c.id !== call.id))
+                  }
+                >
+                  <XCircle size={18} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 

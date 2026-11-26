@@ -7,6 +7,8 @@ import {
   Hand,
   Minus,
   Plus,
+  Receipt,
+  RotateCcw,
   Search,
   ShoppingBag,
   Sparkles,
@@ -17,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
+import { toastError, toastSuccess } from "@/components/ui/toast";
 import { Brand } from "@/components/brand";
 import { ProductImage } from "@/components/product-image";
 import { StatusPill } from "@/components/status-pill";
@@ -35,6 +38,17 @@ import { calculateCartTotal, cartItemTotal } from "@/lib/order-utils";
 import type { CartItem, DailyMenuConfig, Order, Product, Promotion, TableSession } from "@/lib/types";
 
 type MenuMode = "fixed" | "lunch";
+type BillPaymentPreference = "efectivo" | "tarjeta" | "transferencia";
+type ConfirmAction = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  tone?: "default" | "danger";
+  onConfirm: () => void;
+};
+
+const LAST_ORDER_STORAGE_KEY = "imperio-last-order-v1";
+const cartStorageKey = (tableCode: string) => `imperio-cart-v1:${tableCode}`;
 
 /** Íconos opcionales de categoría (solo capa visual; si no existe, la píldora va sin ícono). */
 const CATEGORY_ICONS: Record<string, string> = {
@@ -48,7 +62,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 function normalizeProduct(raw: Record<string, unknown>): Product {
   const product = raw as unknown as Product;
-  const normalized = {
+  return {
     ...product,
     slug: (raw.slug as string) || (raw.id as string) || product.slug || product.id,
     image:
@@ -58,18 +72,6 @@ function normalizeProduct(raw: Record<string, unknown>): Product {
       product.image ||
       "/menu/imperio/chilaquiles-sencillos.jpg"
   };
-  // DEBUG TEMPORAL: log para chilaquiles-suizos
-  if (raw.slug === "chilaquiles-suizos" || raw.id === "chilaquiles-suizos") {
-    console.log("[DEBUG normalizeProduct] chilaquiles-suizos:", {
-      "raw.image": raw.image,
-      "raw.image_url": raw.image_url,
-      "raw.imageUrl": raw.imageUrl,
-      "product.image": product.image,
-      "normalized.image": normalized.image,
-      "raw completo": raw
-    });
-  }
-  return normalized;
 }
 
 export function MenuClient({
@@ -91,6 +93,11 @@ export function MenuClient({
   const [sending, setSending] = useState(false);
   const [generalNotes, setGeneralNotes] = useState("");
   const [waiterCalled, setWaiterCalled] = useState(false);
+  const [billRequested, setBillRequested] = useState(false);
+  const [serviceSheetOpen, setServiceSheetOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [lastOrderItems, setLastOrderItems] = useState<CartItem[]>([]);
+  const [lastOrderDismissed, setLastOrderDismissed] = useState(false);
   const [dailyMenu, setDailyMenu] = useState<DailyMenuConfig | null>(null);
   const [dailyMenuLoading, setDailyMenuLoading] = useState(true);
   const [catalog, setCatalog] = useState<Product[]>(seedProducts);
@@ -98,8 +105,9 @@ export function MenuClient({
   const [comidaCorridaOpen, setComidaCorridaOpen] = useState<boolean | null>(null);
   const [justAdded, setJustAdded] = useState(false);
   const toastTimerRef = useRef<number | null>(null);
-  const [waiterToast, setWaiterToast] = useState(false);
+  const [waiterNotice, setWaiterNotice] = useState<string | null>(null);
   const waiterToastTimerRef = useRef<number | null>(null);
+  const cartHydratedRef = useRef(false);
   const [session, setSession] = useState<TableSession | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionExisted, setSessionExisted] = useState(false);
@@ -322,11 +330,59 @@ export function MenuClient({
   }, [order?.id, order?.accessToken]);
 
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const isSearching = debouncedQuery.trim().length > 0;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query), 200);
     return () => window.clearTimeout(timer);
   }, [query]);
+
+  // Restaurar carrito guardado por mesa y último pedido (solo cliente)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const rawCart = localStorage.getItem(cartStorageKey(tableCode));
+        if (rawCart) {
+          const parsed = JSON.parse(rawCart) as { items?: CartItem[]; notes?: string };
+          if (Array.isArray(parsed.items) && parsed.items.length > 0) {
+            setCart(parsed.items);
+          }
+          if (typeof parsed.notes === "string" && parsed.notes.length > 0) {
+            setGeneralNotes(parsed.notes);
+          }
+        }
+        const rawLast = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
+        if (rawLast) {
+          const parsedLast = JSON.parse(rawLast) as CartItem[];
+          if (Array.isArray(parsedLast) && parsedLast.length > 0) {
+            setLastOrderItems(parsedLast);
+          }
+        }
+      } catch {
+        // localStorage no disponible o corrupto
+      } finally {
+        cartHydratedRef.current = true;
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [tableCode]);
+
+  // Persistir carrito automáticamente para no perderlo si recargan o cambian de app
+  useEffect(() => {
+    if (!cartHydratedRef.current) return;
+    try {
+      if (cart.length === 0 && !generalNotes.trim()) {
+        localStorage.removeItem(cartStorageKey(tableCode));
+      } else {
+        localStorage.setItem(
+          cartStorageKey(tableCode),
+          JSON.stringify({ items: cart, notes: generalNotes })
+        );
+      }
+    } catch {
+      // ignorar errores de cuota/privacidad
+    }
+  }, [cart, generalNotes, tableCode]);
 
   useEffect(() => {
     const pill = document.querySelector<HTMLElement>(`[data-category-pill="${category}"]`);
@@ -336,17 +392,42 @@ export function MenuClient({
   const visible = useMemo(() => {
     const normalized = debouncedQuery.trim().toLocaleLowerCase("es");
     return catalog.filter((product) => {
-      const matchesQuery =
-        !normalized ||
-        `${product.name} ${product.description}`.toLocaleLowerCase("es").includes(normalized);
-      const matchesCategory =
-        category === "Favoritos" ? product.popular : product.category === category;
-      return matchesQuery && matchesCategory;
+      if (normalized) {
+        return `${product.name} ${product.description} ${product.category}`
+          .toLocaleLowerCase("es")
+          .includes(normalized);
+      }
+      return category === "Favoritos" ? product.popular : product.category === category;
     });
   }, [catalog, category, debouncedQuery]);
 
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = calculateCartTotal(cart);
+
+  const sessionOrders = useMemo(
+    () => (session?.orders || []).filter((item) => item.status !== "cancelled"),
+    [session?.orders]
+  );
+  const sessionTotal = useMemo(
+    () => sessionOrders.reduce((sum, item) => sum + Number(item.total || 0), 0),
+    [sessionOrders]
+  );
+
+  // Sugerencias rápidas de 1 toque para el carrito (bebidas y panes disponibles)
+  const cartSuggestions = useMemo(() => {
+    if (cart.length === 0) return [];
+    const inCartIds = new Set(cart.map((item) => item.productId));
+    return catalog
+      .filter((product) => {
+        if (product.soldOut) return false;
+        if (!["Bebidas", "Panes y más"].includes(product.category)) return false;
+        if (inCartIds.has(product.slug || product.id)) return false;
+        if (!isProductAvailable(product, serviceMinutes)) return false;
+        const hasRequiredGroups = Boolean(product.optionGroups?.length || product.options?.length);
+        return !hasRequiredGroups;
+      })
+      .slice(0, 3);
+  }, [cart, catalog, serviceMinutes]);
 
   function addItem(
     product: Product,
@@ -409,22 +490,24 @@ export function MenuClient({
     );
   }
 
-  async function submitOrder() {
-    if (sending || cart.length === 0) return;
-
-    if (sendTogether) {
-      // Queue mode: accumulate orders, send all at once later
-      setPendingOrders((current) => [...current, [...cart]]);
-      setCart([]);
-      setCartOpen(false);
-      setGeneralNotes("");
-      return;
+  function saveLastOrder(items: CartItem[]) {
+    if (!items.length) return;
+    setLastOrderItems(items);
+    setLastOrderDismissed(false);
+    try {
+      localStorage.setItem(LAST_ORDER_STORAGE_KEY, JSON.stringify(items));
+    } catch {
+      // ignorar
     }
+  }
 
-    if (!window.confirm(`¿Enviar este pedido de ${money(subtotal)} a cocina?`)) return;
+  async function executeSubmitOrder() {
+    if (sending || cart.length === 0) return;
+    const submittedItems = [...cart];
     setSending(true);
     try {
-      const created = await sendOrderToApi(cart, generalNotes);
+      const created = await sendOrderToApi(submittedItems, generalNotes);
+      saveLastOrder(submittedItems);
       setCart([]);
       setCartOpen(false);
       setGeneralNotes("");
@@ -439,26 +522,64 @@ export function MenuClient({
     }
   }
 
-  async function sendAllTogether() {
+  function submitOrder() {
+    if (sending || cart.length === 0) return;
+
+    if (sendTogether) {
+      // Queue mode: accumulate orders, send all at once later
+      setPendingOrders((current) => [...current, [...cart]]);
+      setCart([]);
+      setCartOpen(false);
+      setGeneralNotes("");
+      return;
+    }
+
+    setConfirmAction({
+      title: "¿Enviar pedido a cocina?",
+      description: `Se enviarán ${itemCount} ${itemCount === 1 ? "platillo" : "platillos"} por ${money(subtotal)}.`,
+      confirmLabel: `Enviar · ${money(subtotal)}`,
+      onConfirm: () => {
+        setConfirmAction(null);
+        void executeSubmitOrder();
+      }
+    });
+  }
+
+  async function executeSendAllTogether() {
     if (sending || pendingOrders.length === 0) return;
-    const totalItems = pendingOrders.reduce((sum, items) => sum + items.reduce((s, i) => s + i.quantity, 0), 0);
-    if (!window.confirm(`¿Enviar ${pendingOrders.length} pedidos (${totalItems} productos) juntos a cocina?`)) return;
     setSending(true);
     let successCount = 0;
+    const allSubmitted: CartItem[] = [];
     for (const items of pendingOrders) {
       try {
         await sendOrderToApi(items, "");
+        allSubmitted.push(...items);
         successCount++;
       } catch {
         // Continue with remaining orders
       }
     }
+    if (allSubmitted.length > 0) saveLastOrder(allSubmitted);
     setPendingOrders([]);
     setSending(false);
     if (successCount > 0) {
       dismissedOrderRef.current = null;
       setOrder({ id: "batch", folio: `${successCount} pedidos`, tableCode, status: "accepted", items: [], notes: "", subtotal: 0, total: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), source: "supabase" });
     }
+  }
+
+  function sendAllTogether() {
+    if (sending || pendingOrders.length === 0) return;
+    const totalItems = pendingOrders.reduce((sum, items) => sum + items.reduce((s, i) => s + i.quantity, 0), 0);
+    setConfirmAction({
+      title: `¿Enviar ${pendingOrders.length} pedidos juntos?`,
+      description: `Se enviarán ${totalItems} productos a cocina al mismo tiempo.`,
+      confirmLabel: "Enviar todos",
+      onConfirm: () => {
+        setConfirmAction(null);
+        void executeSendAllTogether();
+      }
+    });
   }
 
   async function sendOrderToApi(items: CartItem[], notes: string) {
@@ -500,26 +621,61 @@ export function MenuClient({
           : error instanceof Error
             ? error.message
             : "No fue posible enviar el pedido";
-      window.alert(message);
+      toastError("No fue posible enviar el pedido", message);
       throw error;
     } finally {
       window.clearTimeout(timeout);
     }
   }
 
+  function showWaiterNotice(message: string) {
+    if (waiterToastTimerRef.current) window.clearTimeout(waiterToastTimerRef.current);
+    setWaiterNotice(message);
+    waiterToastTimerRef.current = window.setTimeout(() => setWaiterNotice(null), 2200);
+  }
+
   function callWaiter() {
     if (waiterCalled) return;
     setWaiterCalled(true);
-    if (waiterToastTimerRef.current) window.clearTimeout(waiterToastTimerRef.current);
-    setWaiterToast(true);
-    waiterToastTimerRef.current = window.setTimeout(() => setWaiterToast(false), 1500);
+    setServiceSheetOpen(false);
+    showWaiterNotice("Mesero notificado");
     const call = {
       id: crypto.randomUUID(),
       tableCode,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      kind: "assist" as const
     };
     void channelRef.current?.send({ type: "waiter-call", waiterCall: call });
     window.setTimeout(() => setWaiterCalled(false), 30000);
+  }
+
+  function requestBill(paymentPreference: BillPaymentPreference) {
+    if (billRequested) return;
+    setBillRequested(true);
+    setServiceSheetOpen(false);
+    const label =
+      paymentPreference === "tarjeta"
+        ? "Tarjeta"
+        : paymentPreference === "transferencia"
+          ? "Transferencia"
+          : "Efectivo";
+    showWaiterNotice(`Cuenta solicitada · ${label}`);
+    const call = {
+      id: crypto.randomUUID(),
+      tableCode,
+      timestamp: new Date().toISOString(),
+      kind: "bill" as const,
+      paymentPreference
+    };
+    void channelRef.current?.send({ type: "waiter-call", waiterCall: call });
+    window.setTimeout(() => setBillRequested(false), 30000);
+  }
+
+  function repeatLastOrder() {
+    if (!lastOrderItems.length) return;
+    setCart((current) => [...current, ...lastOrderItems]);
+    setLastOrderDismissed(true);
+    setCartOpen(true);
   }
 
   if (order) {
@@ -588,6 +744,18 @@ export function MenuClient({
                     : "Arma tu pedido y te llamamos en mostrador cuando esté listo."
                   : `Ordena desde la mesa ${tableCode} y sigue tu pedido en tiempo real.`}
               </p>
+              {tableCode !== "LLEVAR" && sessionOrders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setServiceSheetOpen(true)}
+                  className="focus-ring mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--gold)]/35 bg-white/10 px-3.5 py-1.5 text-xs font-bold text-[var(--gold-light)] backdrop-blur transition hover:bg-white/15 active:scale-95"
+                >
+                  <Receipt size={14} />
+                  <span>
+                    Mi cuenta ({sessionOrders.length} {sessionOrders.length === 1 ? "pedido" : "pedidos"}) · {money(sessionTotal)}
+                  </span>
+                </button>
+              )}
             </div>
             <div className="hidden min-w-24 rounded-3xl border border-white/15 bg-white/10 px-5 py-4 text-center text-white shadow-xl backdrop-blur sm:block">
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/75">
@@ -691,6 +859,42 @@ export function MenuClient({
           </div>
         </section>
 
+        {cart.length === 0 && lastOrderItems.length > 0 && !lastOrderDismissed && (
+          <div className="animate-fade-in mt-3 flex items-center justify-between gap-2.5 rounded-2xl border border-[var(--gold)]/40 bg-[#fbf5ea] px-3.5 py-2.5 dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--gold-light)] text-[var(--brown-dark)]">
+                <RotateCcw size={15} />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-bold text-[var(--ink)] dark:text-neutral-100">
+                  ¿Repetir tu último pedido?
+                </p>
+                <p className="truncate text-[11px] text-neutral-600 dark:text-neutral-400">
+                  {lastOrderItems.map((i) => i.name).slice(0, 2).join(", ")}
+                  {lastOrderItems.length > 2 ? ` +${lastOrderItems.length - 2}` : ""}
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={repeatLastOrder}
+                className="focus-ring rounded-full bg-neutral-900 px-3.5 py-1.5 text-xs font-bold text-white transition active:scale-95 dark:bg-white dark:text-neutral-900"
+              >
+                Repetir
+              </button>
+              <button
+                type="button"
+                aria-label="Ocultar sugerencia de último pedido"
+                onClick={() => setLastOrderDismissed(true)}
+                className="focus-ring grid h-7 w-7 place-items-center rounded-full text-neutral-500 transition hover:bg-black/5 dark:hover:bg-white/10"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {mode === "lunch" ? (
           <LunchMenu
             menu={dailyMenu}
@@ -722,7 +926,7 @@ export function MenuClient({
                 <span className="sr-only">Buscar platillos</span>
                 <input
                   className="min-w-0 flex-1 bg-transparent text-base text-neutral-900 outline-none placeholder:text-neutral-500 dark:text-neutral-100 dark:placeholder:text-neutral-400"
-                  placeholder="Busca chilaquiles, molletes, café…"
+                  placeholder="Busca en todo el menú: chilaquiles, café…"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
@@ -744,11 +948,14 @@ export function MenuClient({
                     key={item}
                     data-category-pill={item}
                     className={`focus-ring shrink-0 rounded-full px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap transition-all duration-200 active:scale-95 sm:px-5 sm:py-2.5 sm:text-sm ${
-                      category === item
+                      !isSearching && category === item
                         ? "bg-neutral-900 text-white shadow-sm dark:bg-white dark:text-neutral-900 dark:shadow-none"
                         : "border border-neutral-200/80 bg-white text-neutral-800 hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
                     }`}
-                    onClick={() => setCategory(item)}
+                    onClick={() => {
+                      if (query) setQuery("");
+                      setCategory(item);
+                    }}
                   >
                     {CATEGORY_ICONS[item] ? `${CATEGORY_ICONS[item]} ` : ""}
                     {item}
@@ -757,15 +964,17 @@ export function MenuClient({
               </div>
             </div>
 
-            <div className="mb-3 mt-4 flex items-end justify-between sm:mb-4">
-              <div>
+            <div className="mb-3 mt-4 flex items-end justify-between gap-2 sm:mb-4">
+              <div className="min-w-0">
                 <p className="eyebrow text-[var(--brown)] dark:text-[var(--gold)]">
-                  Hecho al momento
+                  {isSearching ? "Buscando en todo el menú" : "Hecho al momento"}
                 </p>
-                <h2 className="font-display text-2xl font-bold sm:text-3xl">{category}</h2>
+                <h2 className="truncate font-display text-2xl font-bold sm:text-3xl">
+                  {isSearching ? `“${debouncedQuery.trim()}”` : category}
+                </h2>
               </div>
-              <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400 sm:text-sm">
-                {visible.length} opciones
+              <span className="shrink-0 text-xs font-medium text-neutral-600 dark:text-neutral-400 sm:text-sm">
+                {visible.length} {visible.length === 1 ? "opción" : "opciones"}
               </span>
             </div>
 
@@ -817,13 +1026,13 @@ export function MenuClient({
         </div>
       )}
 
-      {waiterToast && (
+      {waiterNotice && (
         <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
           <div className="toast-slide-in flex items-center gap-2.5 rounded-full bg-neutral-900/90 px-5 py-3.5 text-sm font-bold text-white shadow-2xl ring-1 ring-white/15 backdrop-blur-md dark:bg-white/90 dark:text-neutral-900">
             <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--gold)]">
               <Check size={14} strokeWidth={3} className="text-[var(--charcoal)]" />
             </span>
-            Mesero notificado
+            {waiterNotice}
           </div>
         </div>
       )}
@@ -896,36 +1105,194 @@ export function MenuClient({
           drinkFlavors={drinkFlavors}
         />
       )}
-      {/* Botón flotante Llamar mesero */}
-      <div
-        className={`fixed right-4 z-40 transition-all duration-200 ${
-          itemCount > 0 ? "bottom-[5.25rem] sm:bottom-24" : "bottom-5 sm:bottom-6"
-        }`}
-      >
-        <button
-          type="button"
-          aria-label="Llamar mesero"
-          className={`focus-ring flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold transition-all active:scale-95 ${
-            waiterCalled
-              ? "cursor-default bg-[var(--green)] text-white shadow-lg dark:shadow-none"
-              : "bg-neutral-900/90 text-white shadow-lg backdrop-blur-md hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200 dark:shadow-none"
+
+      {/* Botón flotante Mesero / Cuenta (solo servicio en mesa, oculto en Para llevar) */}
+      {tableCode !== "LLEVAR" && (
+        <div
+          className={`fixed right-4 z-40 transition-all duration-200 ${
+            itemCount > 0 ? "bottom-[5.25rem] sm:bottom-24" : "bottom-5 sm:bottom-6"
           }`}
-          onClick={callWaiter}
-          disabled={waiterCalled}
         >
-          {waiterCalled ? (
-            <>
-              <Check size={16} strokeWidth={3} />
-              <span>Mesero avisado</span>
-            </>
-          ) : (
-            <>
-              <Hand size={16} />
-              <span>Llamar mesero</span>
-            </>
-          )}
-        </button>
-      </div>
+          <button
+            type="button"
+            aria-label="Mesero y cuenta"
+            className={`focus-ring flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold transition-all active:scale-95 ${
+              waiterCalled || billRequested
+                ? "bg-[var(--green)] text-white shadow-lg dark:shadow-none"
+                : "bg-neutral-900/90 text-white shadow-lg backdrop-blur-md hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200 dark:shadow-none"
+            }`}
+            onClick={() => setServiceSheetOpen(true)}
+          >
+            {waiterCalled || billRequested ? (
+              <>
+                <Check size={16} strokeWidth={3} />
+                <span>{billRequested ? "Cuenta pedida" : "Mesero avisado"}</span>
+              </>
+            ) : (
+              <>
+                <Hand size={16} />
+                <span>Mesero · Cuenta</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Hoja de atención en mesa: Llamar mesero, Pedir cuenta y Resumen de consumo */}
+      <Dialog open={serviceSheetOpen} onOpenChange={setServiceSheetOpen}>
+        <DialogContent
+          variant="sheet"
+          initialFocus={false}
+          showCloseButton={false}
+          overlayClassName="bg-[#171411]/60 backdrop-blur-[3px]"
+          className="gap-0 bg-[var(--paper)] p-0 text-[var(--ink)] dark:bg-neutral-900 dark:text-neutral-100"
+        >
+          <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5 dark:border-neutral-800 sm:px-5">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--terracotta)] dark:text-[var(--gold)]">
+                Servicio en mesa {tableCode}
+              </p>
+              <DialogTitle className="font-display text-2xl font-bold text-[var(--ink)] dark:text-neutral-100">
+                ¿En qué te ayudamos?
+              </DialogTitle>
+            </div>
+            <button
+              type="button"
+              aria-label="Cerrar atención en mesa"
+              onClick={() => setServiceSheetOpen(false)}
+              className="focus-ring grid h-10 w-10 place-items-center rounded-full bg-[#eee8dc] text-[var(--ink)] transition active:scale-90 dark:bg-neutral-800 dark:text-neutral-100"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-5">
+            <button
+              type="button"
+              disabled={waiterCalled}
+              onClick={callWaiter}
+              className="focus-ring flex w-full items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white p-4 text-left shadow-xs transition active:scale-[0.98] disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-800/80"
+            >
+              <span className="flex items-center gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
+                  {waiterCalled ? <Check size={19} strokeWidth={3} /> : <Hand size={19} />}
+                </span>
+                <span>
+                  <strong className="block text-sm font-bold">
+                    {waiterCalled ? "Mesero en camino" : "Llamar al mesero"}
+                  </strong>
+                  <span className="block text-xs text-neutral-600 dark:text-neutral-400">
+                    {waiterCalled
+                      ? "Ya avisamos a tu mesa. Espera un momento."
+                      : "Servilletas, salsa, dudas o cualquier apoyo"}
+                  </span>
+                </span>
+              </span>
+            </button>
+
+            <div className="rounded-2xl border border-[var(--line)] bg-[#fbf7f1] p-4 dark:border-neutral-800 dark:bg-neutral-800/60">
+              <div className="flex items-center gap-2">
+                <Receipt size={18} className="text-[var(--brown)] dark:text-[var(--gold)]" />
+                <strong className="text-sm font-bold">
+                  {billRequested ? "Cuenta solicitada" : "Pedir la cuenta"}
+                </strong>
+              </div>
+              <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+                {billRequested
+                  ? "Avisamos al mesero con tu preferencia de pago."
+                  : "Elige cómo prefieres pagar para que el mesero llegue preparado."}
+              </p>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {[
+                  { value: "efectivo" as const, icon: "💵", label: "Efectivo" },
+                  { value: "tarjeta" as const, icon: "💳", label: "Tarjeta" },
+                  { value: "transferencia" as const, icon: "📲", label: "Transf." }
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={billRequested}
+                    onClick={() => requestBill(opt.value)}
+                    className="focus-ring flex flex-col items-center justify-center gap-1 rounded-xl border border-[var(--line)] bg-white px-2 py-3 text-xs font-bold text-[var(--ink)] transition hover:border-[var(--brown)] active:scale-95 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                  >
+                    <span className="text-lg" aria-hidden="true">{opt.icon}</span>
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {sessionOrders.length > 0 && (
+              <div className="rounded-2xl border border-[var(--line)] bg-white p-4 dark:border-neutral-800 dark:bg-neutral-800/50">
+                <div className="flex items-center justify-between">
+                  <strong className="text-sm font-bold">Consumo de tu mesa</strong>
+                  <strong className="text-base font-extrabold text-[var(--brown-dark)] dark:text-[var(--gold-light)]">
+                    {money(sessionTotal)}
+                  </strong>
+                </div>
+                <ul className="mt-3 divide-y divide-[var(--line)]/60 dark:divide-neutral-700/60">
+                  {sessionOrders.map((ord) => (
+                    <li key={ord.id} className="flex items-center justify-between gap-2 py-2.5 text-xs">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold">Folio {ord.folio}</span>
+                          <StatusPill status={ord.status} />
+                        </div>
+                        <p className="mt-1 truncate text-neutral-600 dark:text-neutral-400">
+                          {ord.items.map((i) => `${i.quantity}× ${i.name}`).join(" · ") || "Pedido registrado"}
+                        </p>
+                      </div>
+                      <strong className="shrink-0 text-sm">{money(ord.total)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de confirmación propio (reemplaza window.confirm para WebViews móviles) */}
+      <Dialog
+        open={Boolean(confirmAction)}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction(null);
+        }}
+      >
+        <DialogContent
+          initialFocus={false}
+          showCloseButton={false}
+          overlayClassName="bg-[#171411]/60 backdrop-blur-[3px]"
+          className="rounded-3xl bg-[var(--paper)] p-5 text-[var(--ink)] dark:bg-neutral-900 dark:text-neutral-100"
+        >
+          <DialogTitle className="font-display text-2xl font-bold leading-tight">
+            {confirmAction?.title}
+          </DialogTitle>
+          <p className="text-sm leading-6 text-neutral-600 dark:text-neutral-300">
+            {confirmAction?.description}
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => setConfirmAction(null)}
+              className="focus-ring min-h-11 rounded-full border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] transition active:scale-95 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => confirmAction?.onConfirm()}
+              className={`focus-ring min-h-11 rounded-full px-4 py-2.5 text-sm font-bold text-white transition active:scale-95 ${
+                confirmAction?.tone === "danger"
+                  ? "bg-[#9e3326] hover:bg-[#82281d]"
+                  : "bg-neutral-900 hover:opacity-90 dark:bg-white dark:text-neutral-900"
+              }`}
+            >
+              {confirmAction?.confirmLabel}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Drawer open={cartOpen} onOpenChange={setCartOpen} showSwipeHandle>
         <DrawerContent className="max-h-[90dvh] rounded-t-[2rem] border-[var(--line)] bg-[var(--paper)] text-[var(--ink)] dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
@@ -933,6 +1300,22 @@ export function MenuClient({
             cart={cart}
             notes={generalNotes}
             sending={sending}
+            suggestions={cartSuggestions}
+            onQuickAdd={(product) => addItem(product, 1, "")}
+            onRequestClear={() =>
+              setConfirmAction({
+                title: "¿Vaciar todo el pedido?",
+                description: "Se quitarán los platillos que agregaste a tu carrito.",
+                confirmLabel: "Sí, vaciar",
+                tone: "danger",
+                onConfirm: () => {
+                  setConfirmAction(null);
+                  setCart([]);
+                  setGeneralNotes("");
+                  setCartOpen(false);
+                }
+              })
+            }
             onNotes={setGeneralNotes}
             onClose={() => setCartOpen(false)}
             onChange={setCart}
@@ -1470,6 +1853,9 @@ function CartDrawer({
   cart,
   notes,
   sending,
+  suggestions,
+  onQuickAdd,
+  onRequestClear,
   onNotes,
   onClose,
   onChange,
@@ -1478,18 +1864,15 @@ function CartDrawer({
   cart: CartItem[];
   notes: string;
   sending: boolean;
+  suggestions: Product[];
+  onQuickAdd: (product: Product) => void;
+  onRequestClear: () => void;
   onNotes: (notes: string) => void;
   onClose: () => void;
   onChange: (items: CartItem[]) => void;
   onSubmit: () => void;
 }) {
   const subtotal = calculateCartTotal(cart);
-  const clearCart = () => {
-    if (cart.length > 0 && window.confirm("¿Vaciar todo el pedido?")) {
-      onChange([]);
-      onClose();
-    }
-  };
   return (
     <>
       <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 pb-3.5 pt-2 dark:border-neutral-800 sm:px-5 sm:pb-4 sm:pt-3">
@@ -1506,7 +1889,7 @@ function CartDrawer({
             <button
               type="button"
               className="focus-ring flex min-h-10 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold text-[#8a3b30] transition hover:bg-[#f8e8e2] active:scale-95 dark:text-red-300 dark:hover:bg-red-950/40"
-              onClick={clearCart}
+              onClick={onRequestClear}
             >
               <Trash2 size={14} /> Limpiar
             </button>
@@ -1590,6 +1973,40 @@ function CartDrawer({
             </li>
           ))}
         </ul>
+
+        {suggestions.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-[var(--line)]/80 bg-[#fbf7f1] p-3.5 dark:border-neutral-800 dark:bg-neutral-800/50">
+            <p className="text-xs font-bold uppercase tracking-wider text-[var(--brown)] dark:text-[var(--gold)]">
+              ¿Algo para acompañar?
+            </p>
+            <div className="no-scrollbar -mx-1 mt-2.5 flex gap-2.5 overflow-x-auto px-1 pb-0.5">
+              {suggestions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onQuickAdd(item)}
+                  className="focus-ring flex w-40 shrink-0 items-center gap-2.5 rounded-xl border border-[var(--line)] bg-white p-2 text-left transition active:scale-95 dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  <ProductImage
+                    src={item.image}
+                    alt={item.name}
+                    category={item.category}
+                    className="h-11 w-11 shrink-0 rounded-lg"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-bold text-[var(--ink)] dark:text-neutral-100">
+                      {item.name}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] font-bold text-[var(--brown)] dark:text-[var(--gold-light)]">
+                      + {money(item.price)}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <label className="mt-4 block text-sm font-bold">
           Observaciones generales
           <textarea
@@ -1684,11 +2101,12 @@ function OrderTracking({
               </p>
               <div className="mt-2 flex gap-2">
                 <button
+                  type="button"
                   className="focus-ring rounded-lg bg-white/20 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/30"
                   onClick={() => {
                     const url = `${window.location.origin}/seguimiento/${order.folio}`;
                     void navigator.clipboard.writeText(url);
-                    window.alert("Link copiado. Pégalo en WhatsApp o donde quieras.");
+                    toastSuccess("Link copiado", "Pégalo en WhatsApp o donde quieras.");
                   }}
                 >
                   📋 Copiar link

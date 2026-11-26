@@ -133,9 +133,22 @@ export function ToastRoot({ toast: toastObj }: { toast: React.ComponentProps<typ
     <Toast.Root
       toast={toastObj}
       className={cn(
-        "group pointer-events-auto relative flex w-full items-start gap-3 overflow-hidden rounded-xl border bg-card p-4 text-card-foreground shadow-lg ring-1 ring-black/5 transition-all",
+        "group pointer-events-auto relative flex w-full items-start gap-3 overflow-hidden rounded-2xl border bg-card p-4 text-card-foreground shadow-xl ring-1 ring-black/5 transition-all dark:bg-neutral-900 dark:text-neutral-100",
         TYPE_TO_TONE[(toastObj.type as keyof typeof TYPE_TO_TONE) ?? "info"] ?? TYPE_TO_TONE.info
       )}
-    />
+    >
+      <Toast.Content className="min-w-0 flex-1">
+        {toastObj.title && (
+          <Toast.Title className="text-sm font-bold leading-snug">
+            {toastObj.title}
+          </Toast.Title>
+        )}
+        {toastObj.description && (
+          <Toast.Description className="mt-0.5 text-xs opacity-85">
+            {toastObj.description}
+          </Toast.Description>
+        )}
+      </Toast.Content>
+    </Toast.Root>
   )
 }

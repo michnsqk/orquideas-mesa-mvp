@@ -7,7 +7,7 @@ import { StatusPill } from "@/components/status-pill";
 import { money } from "@/lib/menu";
 import { connectOrderChannel } from "@/lib/order-store";
 import type { Order } from "@/lib/types";
-import { Check, ChevronRight, Clock3, Share2 } from "lucide-react";
+import { Check, Share2 } from "lucide-react";
 
 export default function TrackingPage() {
   const params = useParams<{ folio: string }>();
@@ -16,6 +16,8 @@ export default function TrackingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const channelRef = useRef<ReturnType<typeof connectOrderChannel> | null>(null);
+  const prevStatusRef = useRef<string | null>(null);
+  const orderId = order?.id ?? null;
 
   useEffect(() => {
     if (!folio) return;
@@ -55,14 +57,26 @@ export default function TrackingPage() {
   }, [folio]);
 
   useEffect(() => {
-    if (!order) return;
+    if (!orderId) return;
     channelRef.current = connectOrderChannel(({ order: incoming }) => {
-      if (incoming && incoming.id === order.id) {
+      if (incoming && incoming.id === orderId) {
         setOrder(incoming);
       }
     });
     return () => channelRef.current?.close();
-  }, [order?.id]);
+  }, [orderId]);
+
+  useEffect(() => {
+    if (!order?.status) return;
+    if (prevStatusRef.current && prevStatusRef.current !== "ready" && order.status === "ready") {
+      try {
+        navigator.vibrate?.([220, 100, 220, 100, 360]);
+      } catch {
+        // vibrate not supported
+      }
+    }
+    prevStatusRef.current = order.status;
+  }, [order?.status]);
 
   const steps = ["accepted", "preparing", "ready", "delivered"] as const;
   const current = order
