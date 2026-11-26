@@ -11,25 +11,25 @@
 */
 
 :root {
-  --cream: #f4f1ec;
-  --paper: #fffefb;
-  --ink: #1c1a18;
+  --cream: #f6f5f2;
+  --paper: #ffffff;
+  --ink: #141413;
   --muted: oklch(0.97 0 0);
-  --green: #2a2724;
-  --green-2: #3d3833;
+  --green: #1d1d1f;
+  --green-2: #313134;
   --terracotta: #a14a2c;
-  --sage: #3f7a56;
-  --sage-light: #dceadf;
+  --sage: #2e7d52;
+  --sage-light: #dff0e6;
   --gold: #c9a574;
   --gold-light: #f0dca8;
   --brown: #6d4530;
   --brown-dark: #4a2e1f;
-  --charcoal: #2a2724;
-  --charcoal-light: #3a342f;
-  --mist: #e2ded8;
-  --line: #ddd8d1;
-  --shadow: 0 1px 3px rgb(32 27 22 / 5%), 0 6px 20px rgb(32 27 22 / 6%);
-  --shadow-lifted: 0 3px 8px rgb(32 27 22 / 7%), 0 18px 44px rgb(32 27 22 / 14%);
+  --charcoal: #1d1d1f;
+  --charcoal-light: #2c2c2e;
+  --mist: #eceae4;
+  --line: rgb(20 20 19 / 8%);
+  --shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 6px 20px rgb(0 0 0 / 4%);
+  --shadow-lifted: 0 4px 12px rgb(0 0 0 / 6%), 0 18px 40px rgb(0 0 0 / 10%);
   /* Semantic states — color is never the only carrier of meaning. */
   --state-success: #2f6b4a;
   --state-success-bg: #dce8c8;
@@ -60,9 +60,9 @@
   --space-16: 64px;
   --space-20: 80px;
   /* Elevation — subtle, consistent, no decoration. */
-  --elev-1: 0 1px 2px rgb(32 27 22 / 4%), 0 1px 3px rgb(32 27 22 / 5%);
-  --elev-2: 0 1px 3px rgb(32 27 22 / 5%), 0 8px 24px rgb(32 27 22 / 8%);
-  --elev-3: 0 4px 16px rgb(32 27 22 / 10%), 0 24px 60px rgb(32 27 22 / 14%);
+  --elev-1: 0 1px 2px rgb(0 0 0 / 4%), 0 1px 3px rgb(0 0 0 / 4%);
+  --elev-2: 0 2px 6px rgb(0 0 0 / 5%), 0 10px 26px rgb(0 0 0 / 7%);
+  --elev-3: 0 6px 18px rgb(0 0 0 / 9%), 0 24px 56px rgb(0 0 0 / 13%);
   /* Touch targets — minimum 44px for interactive controls. */
   --touch-min: 44px;
   /* Motion */
@@ -71,8 +71,8 @@
   --dur-fast: 140ms;
   --dur: 220ms;
   --dur-slow: 360ms;
-  --glass-bg: rgb(255 255 255 / 72%);
-  --glass-border: rgb(221 216 209 / 60%);
+  --glass-bg: rgb(255 255 255 / 78%);
+  --glass-border: rgb(20 20 19 / 8%);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -83,7 +83,7 @@
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.5 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -112,7 +112,7 @@
 }
 
 ::selection {
-  background: rgb(161 74 44 / 22%);
+  background: rgb(161 74 44 / 18%);
 }
 
 html {
@@ -128,11 +128,10 @@ body {
   margin: 0;
   min-height: 100vh;
   overflow-x: clip;
-  background:
-    radial-gradient(120% 60% at 50% -12%, rgb(201 165 116 / 12%), transparent 60%),
-    var(--cream);
+  background: var(--cream);
   color: var(--ink);
-  font-family: "Aptos", "Segoe UI", Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", system-ui, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
@@ -157,14 +156,10 @@ select,
 button {
   cursor: pointer;
   transition:
-    transform 120ms ease,
-    background-color 120ms ease,
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-
-button:not(:disabled):active {
-  transform: translateY(1px);
+    transform 150ms var(--ease-spring),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    opacity 150ms ease;
 }
 
 button:disabled {
@@ -174,14 +169,14 @@ button:disabled {
 /* ── Typography ── */
 
 .font-display {
-  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
-  letter-spacing: -0.02em;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Roboto", system-ui, sans-serif;
+  letter-spacing: -0.03em;
 }
 
 .eyebrow {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -738,6 +733,15 @@ select:focus {
 /* ---break---
 */
 .dark {
+  --cream: #0b0b0c;
+  --paper: #161618;
+  --ink: #f5f5f7;
+  --mist: #242427;
+  --line: rgb(255 255 255 / 10%);
+  --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 28%);
+  --shadow-lifted: 0 6px 16px rgb(0 0 0 / 35%), 0 20px 44px rgb(0 0 0 / 45%);
+  --glass-bg: rgb(22 22 24 / 78%);
+  --glass-border: rgb(255 255 255 / 10%);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
