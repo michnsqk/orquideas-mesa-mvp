@@ -95,6 +95,7 @@ export function MenuClient({
   const [dailyMenuLoading, setDailyMenuLoading] = useState(true);
   const [catalog, setCatalog] = useState<Product[]>(seedProducts);
   const [serviceMinutes, setServiceMinutes] = useState<number | null>(null);
+  const [comidaCorridaOpen, setComidaCorridaOpen] = useState<boolean | null>(null);
   const [justAdded, setJustAdded] = useState(false);
   const toastTimerRef = useRef<number | null>(null);
   const [waiterToast, setWaiterToast] = useState(false);
@@ -123,7 +124,10 @@ export function MenuClient({
   }, [promotions]);
 
   useEffect(() => {
-    const updateClock = () => setServiceMinutes(mexicoCityMinutes());
+    const updateClock = () => {
+      setServiceMinutes(mexicoCityMinutes());
+      setComidaCorridaOpen(isComidaCorridaAvailable());
+    };
     updateClock();
     const timer = window.setInterval(updateClock, 60000);
     return () => window.clearInterval(timer);
@@ -541,34 +545,43 @@ export function MenuClient({
   return (
     <main className="min-h-screen pb-32">
       <header className="premium-header relative overflow-hidden text-white">
-        <div className="absolute -right-20 -top-36 h-80 w-80 rounded-full border-[64px] border-white/[0.035]" />
-        <div className="absolute bottom-0 left-1/3 h-px w-1/2 bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
-        <div className="relative mx-auto max-w-6xl px-4 pb-8 pt-5 sm:px-6 sm:pb-10">
-          <div className="flex items-center justify-between">
-            <Brand compact inverse />
-            <div className="flex items-center gap-2">
+        <div className="pointer-events-none absolute -right-20 -top-36 h-80 w-80 rounded-full border-[64px] border-white/[0.035]" />
+        <div className="pointer-events-none absolute bottom-0 left-1/3 h-px w-1/2 bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
+        <div className="relative mx-auto max-w-6xl px-4 pb-6 pt-4 sm:px-6 sm:pb-10 sm:pt-5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <Brand compact inverse />
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
               <ThemeToggle />
-              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-white shadow-sm backdrop-blur">
+              <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm backdrop-blur sm:px-3.5 sm:py-2 sm:text-xs">
                 <span
-                  className={`mr-2 inline-block h-2 w-2 rounded-full ${
-                  tableCode === "LLEVAR"
-                    ? "bg-[#fbbf24] shadow-[0_0_0_4px_rgba(251,191,36,0.14)]"
-                    : "bg-[#9acb8a] shadow-[0_0_0_4px_rgba(154,203,138,0.12)]"
-                }`}
-              />
-              {tableCode === "LLEVAR" ? "Para llevar 🥡" : "Servicio en mesa"}
-                </div>
+                  className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                    tableCode === "LLEVAR"
+                      ? "bg-[#fbbf24] shadow-[0_0_0_4px_rgba(251,191,36,0.14)]"
+                      : "bg-[#9acb8a] shadow-[0_0_0_4px_rgba(154,203,138,0.12)]"
+                  }`}
+                />
+                {tableCode === "LLEVAR" ? (
+                  <span>Para llevar 🥡</span>
+                ) : (
+                  <>
+                    <span className="sm:hidden">Mesa {tableCode}</span>
+                    <span className="hidden sm:inline">Servicio en mesa</span>
+                  </>
+                )}
               </div>
             </div>
-          <div className="mt-9 flex items-end justify-between gap-4">
-            <div>
+          </div>
+          <div className="mt-5 flex items-end justify-between gap-4 sm:mt-9">
+            <div className="min-w-0">
               <p className="eyebrow text-[var(--gold)]">
                 Cocina hecha al momento
               </p>
-              <h1 className="mt-2 max-w-2xl font-display text-4xl font-bold leading-[0.98] sm:text-5xl">
+              <h1 className="mt-1.5 max-w-2xl font-display text-[1.9rem] font-bold leading-[1.04] sm:mt-2 sm:text-5xl sm:leading-[0.98]">
                 ¿Qué se te antoja hoy?
               </h1>
-              <p className="mt-3 text-sm text-white/85">
+              <p className="mt-2 text-[13px] leading-5 text-white/85 sm:mt-3 sm:text-sm">
                 {tableCode === "LLEVAR"
                   ? customerName
                     ? `¡Hola, ${customerName}! Te llamamos en mostrador cuando esté listo.`
@@ -606,55 +619,71 @@ export function MenuClient({
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         {sessionExisted && session && (
-          <div className="animate-fade-in -mt-3 relative z-10 mb-3 flex items-center justify-between gap-3 rounded-2xl border border-neutral-200/40 bg-white/60 p-3 backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/60">
-            <div className="flex items-center gap-2.5 text-sm">
-              <span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--gold-light)] text-xs font-bold text-[#5c3d2e]">👥</span>
-              <span className="font-bold text-[var(--ink)]">Mesa compartida</span>
-              <span className="text-neutral-700 dark:text-neutral-300">· Los pedidos se agrupan para cocina</span>
+          <div className="animate-fade-in relative z-10 -mt-3 mb-2 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-neutral-200/60 bg-white/85 px-3.5 py-2.5 shadow-sm backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/85 sm:flex-nowrap sm:p-3">
+            <div className="flex min-w-0 items-center gap-2.5 text-xs sm:text-sm">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--gold-light)] text-xs font-bold text-[#5c3d2e]">
+                👥
+              </span>
+              <div className="min-w-0 leading-snug">
+                <span className="font-bold text-[var(--ink)] dark:text-neutral-100">Mesa compartida</span>
+                <span className="text-neutral-600 dark:text-neutral-300"> · Se agrupa en cocina</span>
+              </div>
             </div>
-            <label className="flex cursor-pointer items-center gap-2 shrink-0">
+            <label className="flex shrink-0 cursor-pointer items-center gap-2">
               <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300">Enviar juntos</span>
               <button
+                type="button"
                 role="switch"
                 aria-checked={sendTogether}
                 aria-label="Enviar pedidos juntos"
-                className={`relative h-7 w-12 rounded-full transition-colors ${
-                  sendTogether ? "bg-[var(--green)]" : "bg-[var(--line)]"
+                className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                  sendTogether ? "bg-[var(--green)] dark:bg-[var(--gold)]" : "bg-[var(--line)] dark:bg-neutral-700"
                 }`}
                 onClick={() => setSendTogether((v) => !v)}
               >
                 <span
-                  className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
-                    sendTogether ? "translate-x-5.5" : "translate-x-0.5"
+                  className={`pointer-events-none absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ${
+                    sendTogether ? "translate-x-5" : "translate-x-0"
                   }`}
-                  style={{
-                    transform: sendTogether ? "translateX(22px)" : "translateX(2px)"
-                  }}
                 />
               </button>
             </label>
           </div>
         )}
 
-        <section className="relative z-10 -mt-4" aria-label="Tipo de menú">
-          <div className="mx-auto my-4 w-full max-w-md rounded-full bg-neutral-200/80 p-1.5 dark:bg-neutral-800/80">
+        <section className="relative z-10 mt-3 sm:-mt-4" aria-label="Tipo de menú">
+          <div className="mx-auto w-full max-w-md rounded-2xl bg-neutral-200/85 p-1 shadow-sm dark:bg-neutral-800/90 sm:my-4 sm:rounded-full sm:p-1.5">
             <div className="grid grid-cols-2 gap-1">
               {[
-                ["fixed", "Paquetes y carta"],
-                ["lunch", "Comida corrida"]
-              ].map(([value, label]) => (
+                {
+                  value: "fixed" as const,
+                  label: "Paquetes y carta",
+                  schedule: "9 a.m.–5 p.m."
+                },
+                {
+                  value: "lunch" as const,
+                  label: "Comida corrida",
+                  schedule:
+                    comidaCorridaOpen === false
+                      ? "Cerrado"
+                      : "L–V 9–6 · Sáb 9–3"
+                }
+              ].map(({ value, label, schedule }) => (
                 <button
+                  type="button"
                   key={value}
-                  className={`focus-ring rounded-full px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
+                  className={`focus-ring flex min-w-0 flex-col items-center justify-center rounded-xl px-2.5 py-2 text-center transition-all duration-200 sm:rounded-full sm:px-4 sm:py-2.5 ${
                     mode === value
                       ? "bg-neutral-900 text-white shadow-sm dark:bg-white dark:text-neutral-900"
                       : "text-neutral-700 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
                   }`}
-                  onClick={() => setMode(value as MenuMode)}
+                  onClick={() => setMode(value)}
                 >
-                  {label}{" "}
-                  <span className="font-normal opacity-80">
-                    · {value === "fixed" ? "9 a 5" : (isComidaCorridaAvailable() ? "9 a.m.–6 p.m. (lun–vie) / 9 a.m.–3 p.m. (sáb)" : "Cerrado")}
+                  <span className="max-w-full truncate text-xs font-bold leading-tight sm:text-[13px]">
+                    {label}
+                  </span>
+                  <span className="mt-0.5 max-w-full truncate text-[10px] font-medium leading-tight opacity-80 sm:text-[11px]">
+                    {schedule}
                   </span>
                 </button>
               ))}
@@ -672,17 +701,24 @@ export function MenuClient({
           />
         ) : (
           <>
-            <div className="sticky top-0 z-20 -mx-4 mt-5 border-b border-[var(--line)]/50 bg-[var(--cream)]/90 px-4 pb-4 pt-3 backdrop-blur-xl sm:-mx-6 sm:px-6">
-              <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
-                <Badge variant="outline" className="h-auto rounded-full border-[var(--line)] bg-white px-3 py-1 text-[11px] font-medium text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100">
-                  🥣 Paquetes de desayuno · fruta y café · 9:00 a.m.–1:00 p.m.
-                </Badge>
-                <Badge variant="outline" className="h-auto rounded-full border-[var(--line)] bg-white px-3 py-1 text-[11px] font-medium text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100">
-                  🍽️ Comidas a la carta · 1:00–5:00 p.m.
-                </Badge>
-              </div>
-              <label className="flex items-center gap-3 rounded-2xl border border-neutral-200/60 bg-white/80 px-4 py-3 backdrop-blur-md transition-shadow focus-within:shadow-md dark:border-neutral-800 dark:bg-neutral-900/80">
-                <Search size={19} aria-hidden="true" className="shrink-0 text-neutral-700 dark:text-neutral-300" />
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5 sm:mt-4 sm:gap-2">
+              <Badge
+                variant="outline"
+                className="h-auto max-w-full whitespace-normal rounded-full border-[var(--line)] bg-white px-3 py-1 text-center text-[11px] font-medium leading-snug text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+              >
+                🥣 Desayunos con fruta y café · 9:00 a.m.–1:00 p.m.
+              </Badge>
+              <Badge
+                variant="outline"
+                className="h-auto max-w-full whitespace-normal rounded-full border-[var(--line)] bg-white px-3 py-1 text-center text-[11px] font-medium leading-snug text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+              >
+                🍽️ Comidas a la carta · 1:00–5:00 p.m.
+              </Badge>
+            </div>
+
+            <div className="sticky top-0 z-20 -mx-4 mt-3 border-b border-[var(--line)]/50 bg-[var(--cream)]/92 px-4 pb-3 pt-2.5 backdrop-blur-xl dark:border-neutral-800/80 dark:bg-neutral-950/90 sm:-mx-6 sm:mt-4 sm:px-6 sm:pb-4 sm:pt-3">
+              <label className="flex items-center gap-2.5 rounded-2xl border border-neutral-200/70 bg-white/90 px-3.5 py-2.5 backdrop-blur-md transition-shadow focus-within:shadow-md dark:border-neutral-800 dark:bg-neutral-900/90 sm:gap-3 sm:px-4 sm:py-3">
+                <Search size={18} aria-hidden="true" className="shrink-0 text-neutral-600 dark:text-neutral-300" />
                 <span className="sr-only">Buscar platillos</span>
                 <input
                   className="min-w-0 flex-1 bg-transparent text-base text-neutral-900 outline-none placeholder:text-neutral-500 dark:text-neutral-100 dark:placeholder:text-neutral-400"
@@ -692,6 +728,7 @@ export function MenuClient({
                 />
                 {query && (
                   <button
+                    type="button"
                     aria-label="Limpiar búsqueda"
                     className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-neutral-200/70 text-neutral-700 transition active:scale-90 dark:bg-neutral-700 dark:text-neutral-300"
                     onClick={() => setQuery("")}
@@ -700,12 +737,13 @@ export function MenuClient({
                   </button>
                 )}
               </label>
-              <div className="no-scrollbar -mx-1 mt-3 flex gap-2 overflow-x-auto px-1 py-1">
+              <div className="no-scrollbar -mx-4 mt-2.5 flex gap-2 overflow-x-auto px-4 py-0.5 sm:-mx-1 sm:mt-3 sm:px-1 sm:py-1">
                 {categories.map((item) => (
                   <button
+                    type="button"
                     key={item}
                     data-category-pill={item}
-                    className={`focus-ring shrink-0 rounded-full px-5 py-3 text-sm font-semibold whitespace-nowrap transition-all duration-200 active:scale-95 ${
+                    className={`focus-ring shrink-0 rounded-full px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap transition-all duration-200 active:scale-95 sm:px-5 sm:py-2.5 sm:text-sm ${
                       category === item
                         ? "bg-neutral-900 text-white shadow-sm dark:bg-white dark:text-neutral-900 dark:shadow-none"
                         : "border border-neutral-200/80 bg-white text-neutral-800 hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
@@ -719,18 +757,20 @@ export function MenuClient({
               </div>
             </div>
 
-            <div className="mb-4 mt-3 flex items-end justify-between">
+            <div className="mb-3 mt-4 flex items-end justify-between sm:mb-4">
               <div>
-              <p className="eyebrow text-[var(--brown)]">
-                Hecho al momento
-              </p>
-                <h2 className="font-display text-3xl font-bold">{category}</h2>
+                <p className="eyebrow text-[var(--brown)] dark:text-[var(--gold)]">
+                  Hecho al momento
+                </p>
+                <h2 className="font-display text-2xl font-bold sm:text-3xl">{category}</h2>
               </div>
-              <span className="text-sm text-neutral-600 dark:text-neutral-400">{visible.length} opciones</span>
+              <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400 sm:text-sm">
+                {visible.length} opciones
+              </span>
             </div>
 
             {visible.length ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-3.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
                 {visible.map((product) => (
                    <ProductCard
                      key={product.id}
@@ -754,6 +794,7 @@ export function MenuClient({
                   Intenta con otro nombre o cambia de categoría.
                 </p>
                 <button
+                  type="button"
                   className="focus-ring mt-5 rounded-full bg-neutral-900 px-6 py-2.5 text-sm font-semibold text-white transition active:scale-95 dark:bg-white dark:text-neutral-900"
                   onClick={() => { setQuery(""); setCategory("Favoritos"); }}
                 >
@@ -788,9 +829,10 @@ export function MenuClient({
       )}
 
       {itemCount > 0 && (
-        <div className="fixed bottom-6 left-1/2 z-40 w-[calc(100%-2rem)] max-w-md -translate-x-1/2">
+        <div className="fixed bottom-4 left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 pb-[env(safe-area-inset-bottom)] sm:bottom-6 sm:w-[calc(100%-2rem)]">
           <button
-            className="focus-ring flex w-full items-center justify-between gap-3 rounded-full border border-white/20 bg-white/80 p-2 pl-5 text-left shadow-2xl backdrop-blur-xl transition-all hover:bg-white/90 active:scale-95 dark:border-white/10 dark:bg-neutral-900/80 dark:hover:bg-neutral-900/90"
+            type="button"
+            className="focus-ring flex w-full items-center justify-between gap-3 rounded-full border border-white/20 bg-white/90 p-2 pl-4 text-left shadow-2xl backdrop-blur-xl transition-all hover:bg-white active:scale-[0.98] dark:border-white/10 dark:bg-neutral-900/90 dark:hover:bg-neutral-900 sm:pl-5"
             onClick={() => setCartOpen(true)}
           >
             <span className="flex min-w-0 items-center gap-3">
@@ -801,7 +843,7 @@ export function MenuClient({
                 {sendTogether ? "Agregar al grupo" : "Ver mi pedido"}
               </span>
             </span>
-            <span className="shrink-0 rounded-full bg-[var(--charcoal)] px-4 py-2.5 font-extrabold text-white dark:bg-white dark:text-neutral-900">
+            <span className="shrink-0 rounded-full bg-[var(--charcoal)] px-4 py-2.5 text-sm font-extrabold text-white dark:bg-white dark:text-neutral-900">
               {money(subtotal)}
             </span>
           </button>
@@ -822,6 +864,7 @@ export function MenuClient({
                 <div className="flex items-center gap-2">
                   <strong className="text-sm">{money(orderTotal)}</strong>
                   <button
+                    type="button"
                     className="focus-ring grid h-6 w-6 place-items-center rounded-full bg-[#f1d0ca] text-[#7a2c22]"
                     aria-label="Quitar pedido"
                     onClick={() => setPendingOrders((current) => current.filter((_, i) => i !== index))}
@@ -833,6 +876,7 @@ export function MenuClient({
             );
           })}
           <button
+            type="button"
             className="focus-ring btn-press flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--green)] px-5 py-3.5 font-bold text-white shadow-xl transition hover:opacity-90 disabled:opacity-50"
             disabled={sending}
             onClick={sendAllTogether}
@@ -853,8 +897,13 @@ export function MenuClient({
         />
       )}
       {/* Botón flotante Llamar mesero */}
-      <div className="fixed bottom-20 right-4 z-40 sm:bottom-24">
+      <div
+        className={`fixed right-4 z-40 transition-all duration-200 ${
+          itemCount > 0 ? "bottom-[5.25rem] sm:bottom-24" : "bottom-5 sm:bottom-6"
+        }`}
+      >
         <button
+          type="button"
           aria-label="Llamar mesero"
           className={`focus-ring flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold transition-all active:scale-95 ${
             waiterCalled
@@ -879,7 +928,7 @@ export function MenuClient({
       </div>
 
       <Drawer open={cartOpen} onOpenChange={setCartOpen} showSwipeHandle>
-        <DrawerContent className="rounded-t-[2.5rem] border-[var(--line)] bg-[var(--paper)] text-[var(--ink)] dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
+        <DrawerContent className="max-h-[90dvh] rounded-t-[2rem] border-[var(--line)] bg-[var(--paper)] text-[var(--ink)] dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
           <CartDrawer
             cart={cart}
             notes={generalNotes}
@@ -925,38 +974,44 @@ function ProductCard({
   const recommended =
     !product.popular && product.category === "Comidas a la carta" && !product.soldOut && available;
   return (
-    <Card className="menu-card group relative overflow-hidden rounded-3xl border-neutral-100 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+    <Card className="menu-card group relative gap-0 overflow-hidden rounded-3xl border-neutral-100 bg-white py-0 dark:border-neutral-800 dark:bg-neutral-900">
       <button
+        type="button"
         className="focus-ring block w-full text-left disabled:opacity-65"
         onClick={() => onOpen(product)}
         disabled={product.soldOut || !available}
       >
         <div className="relative">
-          <ProductImage src={product.image} alt={product.name} category={product.category} className="aspect-[4/3] w-full transition-transform duration-500 ease-out group-hover:scale-105" />
-          <span className="absolute left-3 top-3 rounded-full border border-white/40 bg-[#24211f]/70 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-white shadow-lg backdrop-blur-md">
+          <ProductImage
+            src={product.image}
+            alt={product.name}
+            category={product.category}
+            className="aspect-[16/10] w-full transition-transform duration-500 ease-out sm:aspect-[4/3] sm:group-hover:scale-105"
+          />
+          <span className="absolute left-3 top-3 rounded-full border border-white/40 bg-[#24211f]/70 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-white shadow-lg backdrop-blur-md">
             {product.category}
           </span>
           {promotion && (
-            <Badge className="animate-pulse absolute right-3 top-3 h-auto border border-white/40 bg-gradient-to-r from-[#f59e0b] to-[#fbbf24] px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#7c2d00] shadow-[0_0_16px_rgba(245,158,11,0.5)]">
+            <Badge className="animate-pulse absolute right-3 top-3 h-auto border border-white/40 bg-gradient-to-r from-[#f59e0b] to-[#fbbf24] px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#7c2d00] shadow-[0_0_16px_rgba(245,158,11,0.5)]">
               ¡PROMO!
             </Badge>
           )}
           <div className="absolute bottom-2 left-3 flex flex-wrap gap-1.5">
             {product.popular && (
-              <Badge variant="outline" className="h-auto border-none bg-black/60 px-3 py-1 text-[11px] font-medium text-white backdrop-blur-md">
+              <Badge variant="outline" className="h-auto border-none bg-black/60 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-md">
                 🔥 Popular
               </Badge>
             )}
             {recommended && (
-              <Badge variant="outline" className="h-auto border-none bg-black/60 px-3 py-1 text-[11px] font-medium text-white backdrop-blur-md">
+              <Badge variant="outline" className="h-auto border-none bg-black/60 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-md">
                 ⭐ Recomendado
               </Badge>
             )}
           </div>
           <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/25 to-transparent" />
         </div>
-        <div className="p-5">
-          <div className="mb-2 flex min-h-6 flex-wrap gap-2">
+        <div className="p-4 sm:p-5">
+          <div className="mb-2 flex min-h-6 flex-wrap gap-1.5 sm:gap-2">
             {product.isNew && (
               <Badge className="h-auto bg-[#d9ebe1] px-2 py-1 text-[10px] font-bold uppercase text-[var(--green)]">
                 Nuevo
@@ -983,15 +1038,17 @@ function ProductCard({
               </Badge>
             )}
           </div>
-          <h3 className="font-display text-[1.35rem] font-bold leading-[1.05]">{product.name}</h3>
-          <p className="mt-2 line-clamp-2 min-h-10 text-sm font-medium leading-5 text-neutral-600 dark:text-neutral-300">
+          <h3 className="font-display text-[1.28rem] font-bold leading-[1.08] sm:text-[1.35rem]">
+            {product.name}
+          </h3>
+          <p className="mt-1.5 line-clamp-2 min-h-10 text-sm font-medium leading-5 text-neutral-600 dark:text-neutral-300">
             {product.description}
           </p>
           {product.packageIncludes && product.packageIncludes.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
               {product.packageIncludes.map((item) => (
                 <span
-                  className="rounded-full border border-[var(--line)] bg-[var(--cream)] px-2.5 py-1 text-[11px] font-bold text-[var(--brown)]"
+                  className="rounded-full border border-[var(--line)] bg-[var(--cream)] px-2.5 py-1 text-[11px] font-bold text-[var(--brown)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-[var(--gold-light)]"
                   key={item}
                 >
                   ✓ {item}
@@ -999,8 +1056,8 @@ function ProductCard({
               ))}
             </div>
           )}
-          <div className="mt-5 flex items-center justify-between border-t border-[var(--line)]/65 pt-4">
-            <p className="text-lg font-extrabold text-[var(--brown-dark)]">
+          <div className="mt-4 flex items-center justify-between border-t border-[var(--line)]/65 pt-3.5 dark:border-neutral-800 sm:mt-5 sm:pt-4">
+            <p className="text-lg font-extrabold text-[var(--brown-dark)] dark:text-[var(--gold-light)]">
               {promoPrice !== null ? money(promoPrice) : money(product.price)}
               {(promoPrice !== null || product.compareAt) && (
                 <span className="ml-2 text-xs font-normal text-[#929a96] line-through">
@@ -1017,8 +1074,8 @@ function ProductCard({
                 {effectiveFrom}–{effectiveUntil}
               </span>
             ) : (
-              <span className="grid h-11 w-11 place-items-center rounded-full bg-neutral-900 text-white shadow-md transition group-hover:scale-110 active:scale-90 dark:bg-white dark:text-neutral-900">
-                <Plus size={20} />
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-neutral-900 text-white shadow-md transition active:scale-90 sm:h-11 sm:w-11 sm:group-hover:scale-110 dark:bg-white dark:text-neutral-900">
+                <Plus size={19} />
               </span>
             )}
           </div>
@@ -1195,9 +1252,11 @@ function ProductDialog({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent
+        variant="sheet"
+        initialFocus={false}
         showCloseButton={false}
         overlayClassName="bg-[#171411]/60 backdrop-blur-[3px]"
-        className="top-0 left-0 flex h-dvh w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-t-[2rem] rounded-b-none bg-[var(--paper)] p-0 text-[var(--ink)] sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[92dvh] sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl dark:bg-neutral-900 dark:text-neutral-100"
+        className="gap-0 bg-[var(--paper)] p-0 text-[var(--ink)] dark:bg-neutral-900 dark:text-neutral-100"
       >
         <DialogTitle className="sr-only">{product.name}</DialogTitle>
         <div className="relative shrink-0">
@@ -1205,11 +1264,17 @@ function ProductDialog({
             src={product.image}
             alt={product.name}
             category={product.category}
-            className="aspect-[4/3] w-full"
+            className="h-48 w-full sm:h-60"
           />
-          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/45 to-transparent" />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-1/2 top-2.5 z-10 h-1 w-10 -translate-x-1/2 rounded-full bg-white/75 shadow-sm sm:hidden"
+          />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/35 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
           <button
-            className="focus-ring absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full bg-black/40 text-white backdrop-blur-md transition active:scale-90"
+            type="button"
+            className="focus-ring absolute right-3.5 top-3.5 z-10 grid h-10 w-10 place-items-center rounded-full bg-black/50 text-white backdrop-blur-md transition active:scale-90"
             aria-label="Cerrar"
             onClick={onClose}
           >
@@ -1217,22 +1282,27 @@ function ProductDialog({
           </button>
           <div className="absolute bottom-3 left-4 right-4">
             <p className="eyebrow text-[var(--gold-light)]">{product.category}</p>
-            <h2 className="mt-1 font-display text-3xl font-bold leading-none text-white drop-shadow-md">
+            <h2 className="mt-1 font-display text-2xl font-bold leading-[1.08] text-white drop-shadow-md sm:text-3xl sm:leading-none">
               {product.name}
             </h2>
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
-          <p className="leading-6 text-neutral-600 dark:text-neutral-300">{product.description}</p>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5">
+          <p className="text-sm leading-6 text-neutral-600 dark:text-neutral-300 sm:text-base">
+            {product.description}
+          </p>
           {product.packageIncludes && product.packageIncludes.length > 0 && (
-            <div className="mt-5 rounded-2xl border border-[#c9d7ca] bg-[#edf3ec] p-4">
-              <p className="text-xs font-extrabold uppercase tracking-wider text-[var(--green)]">
+            <div className="mt-4 rounded-2xl border border-[#c9d7ca] bg-[#edf3ec] p-3.5 dark:border-emerald-900/60 dark:bg-emerald-950/40 sm:mt-5 sm:p-4">
+              <p className="text-[11px] font-extrabold uppercase tracking-wider text-[var(--green)] dark:text-emerald-300 sm:text-xs">
                 Tu paquete ya incluye
               </p>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-2 flex flex-wrap gap-1.5 sm:gap-2">
                 {product.packageIncludes.map((item) => (
-                  <span className="rounded-full bg-white px-3 py-1.5 text-xs font-bold" key={item}>
+                  <span
+                    className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[var(--ink)] dark:bg-neutral-800 dark:text-neutral-100 sm:py-1.5"
+                    key={item}
+                  >
                     ✓ {item}
                   </span>
                 ))}
@@ -1240,14 +1310,14 @@ function ProductDialog({
             </div>
           )}
           {groups.map((group, groupIndex) => (
-            <fieldset className="mt-5" key={group.id}>
-              <legend className="flex items-center gap-2 font-bold">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--brown)] text-xs text-white">
+            <fieldset className="mt-4 sm:mt-5" key={group.id}>
+              <legend className="flex items-center gap-2 text-sm font-bold sm:text-base">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--brown)] text-xs text-white">
                   {groupIndex + 1}
                 </span>
                 {group.label}
               </legend>
-              <p className="mb-3 ml-8 text-xs text-[var(--muted-foreground)]">
+              <p className="mb-2.5 ml-8 text-xs text-[var(--muted-foreground)] sm:mb-3">
                 Selecciona 1 {group.required !== false && "· Obligatorio"}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -1260,7 +1330,7 @@ function ProductDialog({
                       key={item}
                       disabled={unavailable}
                       aria-pressed={selected}
-                      className={`focus-ring rounded-full px-4 py-2.5 text-xs font-semibold transition-all ${
+                      className={`focus-ring min-h-10 rounded-full px-4 py-2 text-xs font-semibold transition-all sm:py-2.5 ${
                         unavailable
                           ? "cursor-not-allowed opacity-40"
                           : selected
@@ -1278,7 +1348,7 @@ function ProductDialog({
               </div>
             </fieldset>
           ))}
-          <label className="mt-5 block text-sm font-bold">
+          <label className="mt-4 block text-sm font-bold sm:mt-5">
             Observaciones
             <textarea
               className="mt-2 min-h-20 w-full resize-none rounded-xl border border-[var(--line)] bg-white p-3 text-base font-normal outline-none transition focus:border-[var(--green)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
@@ -1289,8 +1359,8 @@ function ProductDialog({
             />
           </label>
           {allExtras.length > 0 && (
-            <fieldset className="mt-5 rounded-2xl border border-[var(--line)] bg-[#fbf7f1] p-4">
-              <legend className="font-display text-xl font-bold">
+            <fieldset className="mt-4 rounded-2xl border border-[var(--line)] bg-[#fbf7f1] p-3.5 dark:border-neutral-800 dark:bg-neutral-800/60 sm:mt-5 sm:p-4">
+              <legend className="font-display text-lg font-bold sm:text-xl">
                 {isBreakfast ? "Extras de desayuno" : "Extras con costo"}
               </legend>
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
@@ -1301,26 +1371,28 @@ function ProductDialog({
                   const selected = selectedExtras.includes(extra.name);
                   return (
                     <label
-                      className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 transition ${
+                      className={`flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3 transition ${
                         selected
-                          ? "border-[var(--brown)] bg-[#f4e6d8] shadow-sm"
-                          : "border-[var(--line)] bg-white hover:bg-[var(--cream)]"
+                          ? "border-[var(--brown)] bg-[#f4e6d8] shadow-sm dark:border-[var(--gold)] dark:bg-neutral-800"
+                          : "border-[var(--line)] bg-white hover:bg-[var(--cream)] dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800"
                       }`}
                       key={extra.name}
                     >
-                      <span className="flex items-center gap-2">
+                      <span className="flex min-w-0 items-center gap-2">
                         <span
-                          className={`grid h-5 w-5 place-items-center rounded border-2 ${
+                          className={`grid h-5 w-5 shrink-0 place-items-center rounded border-2 ${
                             selected
                               ? "border-[var(--brown)] bg-[var(--brown)] text-white"
-                              : "border-[var(--line)]"
+                              : "border-[var(--line)] dark:border-neutral-600"
                           }`}
                         >
                           {selected && <Check size={12} strokeWidth={3} />}
                         </span>
-                        <span className="font-medium">{extra.name}</span>
+                        <span className="truncate font-medium">{extra.name}</span>
                       </span>
-                      <strong className="text-sm text-[var(--brown)]">+{money(extra.price)}</strong>
+                      <strong className="shrink-0 text-sm text-[var(--brown)] dark:text-[var(--gold-light)]">
+                        +{money(extra.price)}
+                      </strong>
                       <input
                         checked={selected}
                         type="checkbox"
@@ -1341,27 +1413,30 @@ function ProductDialog({
           )}
         </div>
 
-        <div className="shrink-0 border-t border-[var(--line)] bg-[var(--paper)] p-4 pb-6">
-          <div className="flex items-center gap-3">
-            <div className="flex shrink-0 items-center rounded-full border border-[var(--line)] bg-white px-1 py-1">
+        <div className="shrink-0 border-t border-[var(--line)] bg-[var(--paper)] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-neutral-800 dark:bg-neutral-900 sm:p-4 sm:pb-5">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="flex shrink-0 items-center rounded-full border border-[var(--line)] bg-white p-1 dark:border-neutral-700 dark:bg-neutral-800">
               <button
-                className="focus-ring grid h-11 w-11 place-items-center rounded-full transition active:scale-90"
+                type="button"
+                className="focus-ring grid h-10 w-10 place-items-center rounded-full transition active:scale-90 sm:h-11 sm:w-11"
                 aria-label="Restar"
                 onClick={() => setQuantity((value) => Math.max(1, value - 1))}
               >
-                <Minus size={18} />
+                <Minus size={17} />
               </button>
-              <strong className="w-9 text-center">{quantity}</strong>
+              <strong className="w-7 text-center text-sm sm:w-9 sm:text-base">{quantity}</strong>
               <button
-                className="focus-ring grid h-11 w-11 place-items-center rounded-full text-[var(--terracotta)] transition active:scale-90"
+                type="button"
+                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--terracotta)] transition active:scale-90 sm:h-11 sm:w-11 dark:text-[var(--gold-light)]"
                 aria-label="Sumar"
                 onClick={() => setQuantity((value) => Math.min(10, value + 1))}
               >
-                <Plus size={18} />
+                <Plus size={17} />
               </button>
             </div>
             <button
-              className="focus-ring flex min-h-14 flex-1 items-center justify-center gap-2 rounded-full bg-neutral-900 py-4 font-semibold text-white transition-transform hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:bg-white dark:text-neutral-900"
+              type="button"
+              className="focus-ring flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition-transform hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:bg-white dark:text-neutral-900 sm:min-h-14 sm:py-4 sm:text-base"
               disabled={isComidaALaCarta && !hasCompleteSelection}
               onClick={() => {
                 const chosenExtras = allExtras
@@ -1378,9 +1453,11 @@ function ProductDialog({
                 setSelectedExtras([]);
               }}
             >
-              <ShoppingBag size={19} />
-              Agregar al pedido
-              <span className="font-bold">· {money(totalPrice)}</span>
+              <ShoppingBag size={18} className="shrink-0" />
+              <span className="truncate">
+                Agregar<span className="hidden min-[380px]:inline"> al pedido</span>
+              </span>
+              <span className="shrink-0 font-bold">· {money(totalPrice)}</span>
             </button>
           </div>
         </div>
@@ -1415,26 +1492,28 @@ function CartDrawer({
   };
   return (
     <>
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-5 pb-4 pt-3">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 pb-3.5 pt-2 dark:border-neutral-800 sm:px-5 sm:pb-4 sm:pt-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-[var(--terracotta)]">
+          <p className="text-xs font-bold uppercase tracking-wider text-[var(--terracotta)] dark:text-[var(--gold)]">
             Revisa antes de enviar
           </p>
-          <DrawerTitle className="font-display text-2xl font-bold text-[var(--ink)]">
+          <DrawerTitle className="font-display text-2xl font-bold text-[var(--ink)] dark:text-neutral-100">
             Mi pedido
           </DrawerTitle>
         </div>
         <div className="flex items-center gap-2">
           {cart.length > 0 && (
             <button
-              className="focus-ring flex min-h-10 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold text-[#8a3b30] transition hover:bg-[#f8e8e2] active:scale-95"
+              type="button"
+              className="focus-ring flex min-h-10 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold text-[#8a3b30] transition hover:bg-[#f8e8e2] active:scale-95 dark:text-red-300 dark:hover:bg-red-950/40"
               onClick={clearCart}
             >
               <Trash2 size={14} /> Limpiar
             </button>
           )}
           <button
-            className="focus-ring grid h-10 w-10 place-items-center rounded-full bg-[#eee8dc] text-[var(--ink)] transition active:scale-90"
+            type="button"
+            className="focus-ring grid h-10 w-10 place-items-center rounded-full bg-[#eee8dc] text-[var(--ink)] transition active:scale-90 dark:bg-neutral-800 dark:text-neutral-100"
             aria-label="Cerrar pedido"
             onClick={onClose}
           >
@@ -1442,7 +1521,7 @@ function CartDrawer({
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
         <ul className="divide-y divide-[var(--line)]/70 dark:divide-neutral-800">
           {cart.map((item, index) => (
             <li key={`${item.productId}-${index}`} className="flex gap-3 py-4 first:pt-1 last:pb-1">
@@ -1457,12 +1536,12 @@ function CartDrawer({
                   <strong className="shrink-0">{money(cartItemTotal(item))}</strong>
                 </div>
                 {item.option && (
-                  <p className="mt-1 text-xs font-medium text-[var(--brown)]">{item.option}</p>
+                  <p className="mt-1 text-xs font-medium text-[var(--brown)] dark:text-[var(--gold-light)]">{item.option}</p>
                 )}
                 {item.extras && item.extras.length > 0 && (
                   <div className="mt-1 space-y-0.5">
                     {item.extras.map((extra, extraIndex) => (
-                      <p key={extraIndex} className="text-xs text-[var(--terracotta)]">
+                      <p key={extraIndex} className="text-xs text-[var(--terracotta)] dark:text-[var(--gold)]">
                         + {extra.name} ({money(extra.price)})
                       </p>
                     ))}
@@ -1481,7 +1560,8 @@ function CartDrawer({
                 />
                 <div className="mt-3 flex items-center gap-3">
                   <button
-                    className="focus-ring grid h-9 w-9 place-items-center rounded-full border border-[var(--line)] bg-white text-[var(--ink)] transition active:scale-90"
+                    type="button"
+                    className="focus-ring grid h-10 w-10 place-items-center rounded-full border border-[var(--line)] bg-white text-[var(--ink)] transition active:scale-90 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
                     aria-label={`Restar ${item.name}`}
                     onClick={() => {
                       const next = [...cart];
@@ -1494,7 +1574,8 @@ function CartDrawer({
                   </button>
                   <strong className="min-w-6 text-center">{item.quantity}</strong>
                   <button
-                    className="focus-ring grid h-9 w-9 place-items-center rounded-full border border-[var(--line)] bg-white text-[var(--ink)] transition active:scale-90"
+                    type="button"
+                    className="focus-ring grid h-10 w-10 place-items-center rounded-full border border-[var(--line)] bg-white text-[var(--ink)] transition active:scale-90 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
                     aria-label={`Sumar ${item.name}`}
                     onClick={() => {
                       const next = [...cart];
@@ -1520,12 +1601,13 @@ function CartDrawer({
           />
         </label>
       </div>
-      <div className="border-t border-[var(--line)] p-4 pb-6">
-        <div className="mb-4 flex items-center justify-between text-lg">
+      <div className="border-t border-[var(--line)] px-4 pt-3.5 pb-[max(1.25rem,env(safe-area-inset-bottom))] dark:border-neutral-800 sm:p-4 sm:pb-6">
+        <div className="mb-3.5 flex items-center justify-between text-base sm:mb-4 sm:text-lg">
           <span className="text-[var(--muted-foreground)]">Total estimado</span>
           <strong className="text-xl">{money(subtotal)}</strong>
         </div>
         <button
+          type="button"
           className="focus-ring flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-neutral-900 py-4 font-semibold text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-neutral-900"
           disabled={sending || cart.length === 0}
           onClick={onSubmit}
@@ -1733,13 +1815,13 @@ function LunchMenu({
 }) {
   if (loading) {
     return (
-      <section className="paper mt-6 overflow-hidden rounded-[2rem]">
-        <div className="bg-[var(--brown)]/10 px-6 py-7">
-          <div className="skeleton mb-4 h-6 w-36" />
-          <div className="skeleton mb-2 h-10 w-80" />
-          <div className="skeleton h-5 w-44" />
+      <section className="paper mt-5 overflow-hidden rounded-[2rem] sm:mt-6">
+        <div className="bg-[var(--brown)]/10 px-5 py-6 sm:px-6 sm:py-7">
+          <div className="skeleton mb-4 h-6 w-36 max-w-full" />
+          <div className="skeleton mb-2 h-10 w-full max-w-xs" />
+          <div className="skeleton h-5 w-44 max-w-full" />
         </div>
-        <div className="space-y-4 p-6">
+        <div className="space-y-4 p-5 sm:p-6">
           {[1, 2, 3].map((i) => (
             <div key={i} className="space-y-3 border-b border-[var(--line)] py-4 last:border-0">
               <div className="skeleton h-6 w-32" />
@@ -1757,15 +1839,16 @@ function LunchMenu({
 
   if (!menu || !menu.availableToday) {
     return (
-      <section className="animate-fade-in paper mt-6 rounded-[2rem] p-7 text-center">
+      <section className="animate-fade-in paper mt-5 rounded-[2rem] p-6 text-center sm:mt-6 sm:p-7">
         <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#f4dfb4]/60">
           <Clock3 className="text-[var(--terracotta)]" size={30} />
         </div>
-        <h2 className="mt-5 font-display text-3xl font-bold">Hoy no hay comida corrida</h2>
+        <h2 className="mt-5 font-display text-2xl font-bold sm:text-3xl">Hoy no hay comida corrida</h2>
         <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">
           Puedes ordenar cualquiera de los productos del menú fijo.
         </p>
         <button
+          type="button"
           className="focus-ring btn-press mt-5 rounded-2xl bg-[var(--green)] px-6 py-3 font-bold text-white shadow-md transition hover:opacity-90"
           onClick={onShowFixed}
         >
@@ -1825,20 +1908,20 @@ function ConfiguredLunchMenu({
   const finalUnitPrice = menu.price + extraTotal;
 
   return (
-    <section className="mt-6">
+    <section className="mt-5 sm:mt-6">
       <div className="paper overflow-hidden rounded-[2rem]">
-        <div className="bg-[var(--brown)] px-6 py-7 text-white">
-          <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold">
+        <div className="bg-[var(--brown)] px-5 py-6 text-white sm:px-6 sm:py-7">
+          <span className="inline-block rounded-full bg-white/20 px-3 py-1 text-xs font-bold">
             {isOpen ? "Disponible ahora" : "Disponible hoy de 1:00 a 5:00 p.m."}
           </span>
-          <h2 className="mt-4 font-display text-4xl font-bold">Comida corrida del día</h2>
+          <h2 className="mt-3.5 font-display text-3xl font-bold sm:mt-4 sm:text-4xl">Comida corrida del día</h2>
           <p className="mt-2 flex items-center gap-2 text-sm">
             <Clock3 size={16} /> {menu.availableFrom}–{menu.availableUntil}
           </p>
-          <p className="mt-5 text-3xl font-bold">{money(menu.price)}</p>
+          <p className="mt-4 text-3xl font-bold sm:mt-5">{money(menu.price)}</p>
         </div>
-        <div className="p-6">
-          <div className="mb-5 flex items-start gap-3 rounded-2xl bg-[#f4dfb4]/60 p-4 text-sm">
+        <div className="p-4 sm:p-6">
+          <div className="mb-5 flex items-start gap-3 rounded-2xl bg-[#f4dfb4]/60 p-3.5 text-sm sm:p-4">
             <Sparkles className="shrink-0 text-[var(--brown)]" size={20} />
             Elige una opción de cada tiempo. Cocina y el mesero recibirán tus elecciones.
           </div>
@@ -1853,14 +1936,14 @@ function ConfiguredLunchMenu({
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {options.map((option) => (
                   <label
-                    className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 transition ${
+                    className={`flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3 transition ${
                       selections[course] === option
                         ? "border-[var(--green)] bg-[#e7efe9] shadow-sm"
                         : "border-[var(--line)] hover:bg-[var(--cream)]"
                     }`}
                     key={option}
                   >
-                    <span>{option}</span>
+                    <span className="min-w-0">{option}</span>
                     <input
                       checked={selections[course] === option}
                       name={`daily-${course}`}
@@ -1886,16 +1969,16 @@ function ConfiguredLunchMenu({
                   const selected = selectedExtras.includes(extra.name);
                   return (
                     <label
-                      className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 transition ${
+                      className={`flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3 transition ${
                         selected
                           ? "border-[var(--brown)] bg-[#f4e6d8] shadow-sm"
                           : "border-[var(--line)] bg-white hover:bg-[var(--cream)]"
                       }`}
                       key={extra.name}
                     >
-                      <span className="flex items-center gap-2">
+                      <span className="flex min-w-0 items-center gap-2">
                         <span
-                          className={`grid h-5 w-5 place-items-center rounded border-2 ${
+                          className={`grid h-5 w-5 shrink-0 place-items-center rounded border-2 ${
                             selected
                               ? "border-[var(--brown)] bg-[var(--brown)] text-white"
                               : "border-[var(--line)]"
@@ -1903,9 +1986,9 @@ function ConfiguredLunchMenu({
                         >
                           {selected && <Check size={12} strokeWidth={3} />}
                         </span>
-                        <span className="font-medium">{extra.name}</span>
+                        <span className="truncate font-medium">{extra.name}</span>
                       </span>
-                      <strong className="text-sm text-[var(--brown)]">+{money(extra.price)}</strong>
+                      <strong className="shrink-0 text-sm text-[var(--brown)]">+{money(extra.price)}</strong>
                       <input
                         checked={selected}
                         type="checkbox"
@@ -1933,6 +2016,7 @@ function ConfiguredLunchMenu({
           <div className="mt-6 grid gap-3 sm:grid-cols-[auto_1fr]">
             <div className="flex items-center justify-center rounded-xl border border-[var(--line)]">
               <button
+                type="button"
                 className="focus-ring grid h-14 w-12 place-items-center"
                 aria-label="Restar comida corrida"
                 onClick={() => setQuantity((value) => Math.max(1, value - 1))}
@@ -1941,6 +2025,7 @@ function ConfiguredLunchMenu({
               </button>
               <strong className="w-10 text-center">{quantity}</strong>
               <button
+                type="button"
                 className="focus-ring grid h-14 w-12 place-items-center text-[var(--brown)]"
                 aria-label="Sumar comida corrida"
                 onClick={() => setQuantity((value) => Math.min(10, value + 1))}
@@ -1949,18 +2034,19 @@ function ConfiguredLunchMenu({
               </button>
             </div>
             <button
-              className="focus-ring flex min-h-14 items-center justify-between rounded-xl bg-[var(--brown)] px-5 font-bold text-white transition hover:bg-[var(--brown-dark)] disabled:cursor-not-allowed disabled:opacity-45"
+              type="button"
+              className="focus-ring flex min-h-14 flex-wrap items-center justify-between gap-2 rounded-xl bg-[var(--brown)] px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-[var(--brown-dark)] disabled:cursor-not-allowed disabled:opacity-45 sm:flex-nowrap sm:px-5 sm:text-base"
               disabled={!isOpen || !hasCompleteSelection}
               onClick={() => onAdd(menu, selections, quantity, chosenExtras)}
             >
-              <span>
+              <span className="min-w-0">
                 {!isOpen
-                  ? "Comida corrida · L-V 9:00 a.m.–6:00 p.m. | Sáb 9:00 a.m.–3:00 p.m. | Dom cerrado"
+                  ? "Comida corrida · L–V 9:00 a.m.–6:00 p.m. · Sáb 9:00 a.m.–3:00 p.m. · Dom cerrado"
                   : hasCompleteSelection
                     ? "Agregar al pedido"
                     : "Elige una opción de cada tiempo"}
               </span>
-              <span>{money(finalUnitPrice * quantity)}</span>
+              <span className="shrink-0">{money(finalUnitPrice * quantity)}</span>
             </button>
           </div>
         </div>
