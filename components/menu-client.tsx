@@ -13,6 +13,8 @@ import {
   ShoppingBag,
   Sparkles,
   Trash2,
+  UserPlus,
+  Users,
   X
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +40,7 @@ import { calculateCartTotal, cartItemTotal } from "@/lib/order-utils";
 import type { CartItem, DailyMenuConfig, Order, Product, Promotion, TableSession } from "@/lib/types";
 
 type MenuMode = "fixed" | "lunch";
+type AccountMode = "undecided" | "shared" | "individual";
 type BillPaymentPreference = "efectivo" | "tarjeta" | "transferencia";
 type ConfirmAction = {
   title: string;
@@ -53,6 +56,7 @@ type ChannelHandle = {
 
 const LAST_ORDER_STORAGE_KEY = "imperio-last-order-v1";
 const cartStorageKey = (tableCode: string) => `imperio-cart-v1:${tableCode}`;
+const accountStorageKey = (tableCode: string) => `imperio-account-v1:${tableCode}`;
 
 function scheduleWhenIdle(task: () => void, timeout = 1200): () => void {
   if (typeof window === "undefined") return () => undefined;
@@ -129,6 +133,11 @@ export function MenuClient({
   const hasMountedCategoryRef = useRef(false);
   const [session, setSession] = useState<TableSession | null>(null);
   const [sessionExisted, setSessionExisted] = useState(false);
+  const [accountMode, setAccountMode] = useState<AccountMode>("undecided");
+  const [dinerName, setDinerName] = useState("");
+  const [accountSheetOpen, setAccountSheetOpen] = useState(false);
+  const [startingFreshAccount, setStartingFreshAccount] = useState(false);
+  const [localOrderIds, setLocalOrderIds] = useState<string[]>([]);
   const [sendTogether, setSendTogether] = useState(false);
   const [pendingOrders, setPendingOrders] = useState<CartItem[][]>([]);
   const [drinkFlavors, setDrinkFlavors] = useState<Array<{drinkType: string; name: string; priceModifier: number}>>([]);
@@ -444,6 +453,22 @@ export function MenuClient({
             setLastOrderItems(parsedLast);
           }
         }
+        if (tableCode !== "LLEVAR") {
+          const rawAccount = localStorage.getItem(accountStorageKey(tableCode));
+          if (rawAccount) {
+            const parsedAcc = JSON.parse(rawAccount) as {
+              mode?: AccountMode;
+              name?: string;
+              orderIds?: string[];
+            };
+            if (parsedAcc.mode === "shared" || parsedAcc.mode === "individual") {
+              setAccountMode(parsedAcc.mode);
+              if (parsedAcc.mode === "individual") setSendTogether(false);
+            }
+            if (typeof parsedAcc.name === "string") setDinerName(parsedAcc.name);
+            if (Array.isArray(parsedAcc.orderIds)) setLocalOrderIds(parsedAcc.orderIds);
+          }
+        }
       } catch {
         // localStorage no disponible o corrupto
       } finally {
@@ -452,6 +477,24 @@ export function MenuClient({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [tableCode]);
+
+  // Persistir preferencia de cuenta y pedidos locales de este dispositivo
+  useEffect(() => {
+    if (!cartHydratedRef.current || tableCode === "LLEVAR") return;
+    try {
+      if (accountMode === "undecided" && !dinerName.trim() && localOrderIds.length === 0) return;
+      localStorage.setItem(
+        accountStorageKey(tableCode),
+        JSON.stringify({
+          mode: accountMode,
+          name: dinerName,
+          orderIds: localOrderIds.slice(-30)
+        })
+      );
+    } catch {
+      // ignorar errores de cuota/privacidad
+    }
+  }, [accountMode, dinerName, localOrderIds, tableCode]);
 
   // Persistir carrito automáticamente para no perderlo si recargan o cambian de app
   useEffect(() => {
@@ -502,6 +545,39 @@ export function MenuClient({
     () => sessionOrders.reduce((sum, item) => sum + Number(item.total || 0), 0),
     [sessionOrders]
   );
+
+  const myOrders = useMemo(() => {
+    if (accountMode === "shared") return sessionOrders;
+    if (accountMode === "individual") {
+      const normalizedName = dinerName.trim().toLocaleLowerCase("es");
+      const idSet = new Set(localOrderIds);
+      return sessionOrders.filter((ord) => {
+        if (idSet.has(ord.id)) return true;
+        if (normalizedName && ord.customerName?.trim().toLocaleLowerCase("es") === normalizedName) {
+          return true;
+        }
+        return false;
+      });
+    }
+    return sessionOrders;
+  }, [accountMode, dinerName, localOrderIds, sessionOrders]);
+
+  const myTotal = useMemo(
+    () => myOrders.reduce((sum, item) => sum + Number(item.total || 0), 0),
+    [myOrders]
+  );
+
+  const ordersByPerson = useMemo(() => {
+    const map = new Map<string, { name: string; count: number; total: number }>();
+    for (const ord of sessionOrders) {
+      const label = ord.customerName?.trim() || "Mesa general";
+      const existing = map.get(label) || { name: label, count: 0, total: 0 };
+      existing.count += 1;
+      existing.total += Number(ord.total || 0);
+      map.set(label, existing);
+    }
+    return [...map.values()].sort((a, b) => b.total - a.total);
+  }, [sessionOrders]);
 
   // Sugerencias rápidas de 1 toque para el carrito (bebidas y panes disponibles)
   const cartSuggestions = useMemo(() => {
@@ -694,7 +770,8 @@ export function MenuClient({
           notes,
           idempotencyKey,
           sessionId: session?.id ?? null,
-          customerName: tableCode === "LLEVAR" ? (customerName?.trim() || undefined) : undefined
+          customerName:
+            (tableCode === "LLEVAR" ? customerName?.trim() : dinerName.trim()) || undefined
         })
       });
       const payload = await response.json().catch(() => null);
@@ -702,6 +779,11 @@ export function MenuClient({
         throw new Error(payload?.error || "No fue posible registrar el pedido");
       }
       const created = payload as Order;
+      if (created?.id) {
+        setLocalOrderIds((current) =>
+          current.includes(created.id) ? current : [...current, created.id]
+        );
+      }
       sendChannelPayload({ type: "new", order: created });
       return created;
     } catch (error) {
@@ -716,6 +798,52 @@ export function MenuClient({
     } finally {
       window.clearTimeout(timeout);
     }
+  }
+
+  async function startFreshAccount(nameInput: string) {
+    if (startingFreshAccount) return;
+    const cleanName = nameInput.trim();
+    setStartingFreshAccount(true);
+    try {
+      const response = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tableCode, forceNew: true })
+      });
+      if (response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | (TableSession & { separatedOnly?: boolean })
+          | null;
+        if (data && typeof data === "object" && "id" in data) {
+          setSession(data);
+          setSessionExisted(Boolean(data.separatedOnly));
+          if (!data.separatedOnly) {
+            setLocalOrderIds([]);
+          }
+        }
+      }
+      setDinerName(cleanName);
+      setAccountMode("individual");
+      setSendTogether(false);
+      setAccountSheetOpen(false);
+      showWaiterNotice(
+        cleanName ? `Cuenta nueva · ${cleanName}` : "Cuenta nueva iniciada ($0)"
+      );
+    } catch {
+      setDinerName(cleanName);
+      setAccountMode("individual");
+      setSendTogether(false);
+      setAccountSheetOpen(false);
+    } finally {
+      setStartingFreshAccount(false);
+    }
+  }
+
+  function joinExistingAccount(nameInput?: string) {
+    if (typeof nameInput === "string") setDinerName(nameInput.trim());
+    setAccountMode("shared");
+    setAccountSheetOpen(false);
+    showWaiterNotice(`Unido a cuenta de Mesa ${tableCode}`);
   }
 
   function showWaiterNotice(message: string) {
@@ -831,27 +959,61 @@ export function MenuClient({
                     : "Desayunos 9–1 · Comidas 1–5 · Pasa a recoger"
                   : "Desayunos con fruta y café 9–1 · Comidas a la carta 1–5"}
               </p>
-              {tableCode !== "LLEVAR" && sessionOrders.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setServiceSheetOpen(true)}
-                  className="focus-ring mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[var(--paper)] px-3.5 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.07] transition active:opacity-80 dark:bg-neutral-900 dark:text-neutral-100 dark:ring-white/10"
-                >
-                  <Receipt size={13} className="text-[var(--terracotta)] dark:text-[var(--gold)]" />
-                  <span className="tabular-nums">
-                    Mi cuenta ({sessionOrders.length}) · {money(sessionTotal)}
-                  </span>
-                </button>
+              {tableCode !== "LLEVAR" && (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  {myOrders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setServiceSheetOpen(true)}
+                      className="focus-ring inline-flex items-center gap-1.5 rounded-full bg-[var(--paper)] px-3.5 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.07] transition active:opacity-80 dark:bg-neutral-900 dark:text-neutral-100 dark:ring-white/10"
+                    >
+                      <Receipt size={13} className="text-[var(--terracotta)] dark:text-[var(--gold)]" />
+                      <span className="tabular-nums">
+                        {accountMode === "individual"
+                          ? `${dinerName.trim() || "Mi cuenta"} (${myOrders.length}) · ${money(myTotal)}`
+                          : `Cuenta mesa (${myOrders.length}) · ${money(myTotal)}`}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setAccountSheetOpen(true)}
+                    className="focus-ring inline-flex items-center gap-1.5 rounded-full bg-black/[0.05] px-3 py-1.5 text-xs font-semibold text-neutral-700 transition hover:bg-black/[0.09] active:opacity-80 dark:bg-white/[0.08] dark:text-neutral-200 dark:hover:bg-white/[0.14]"
+                  >
+                    {accountMode === "individual" ? (
+                      <>
+                        <UserPlus size={13} />
+                        <span>
+                          {dinerName.trim() ? `Individual · ${dinerName.trim()}` : "Cuenta nueva ($0)"}
+                        </span>
+                      </>
+                    ) : accountMode === "shared" ? (
+                      <>
+                        <Users size={13} />
+                        <span>Cuenta grupal</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus size={13} />
+                        <span>Dividir / Cuenta nueva</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               )}
             </div>
             {session && session.status === "active" && (
               <div className="hidden shrink-0 items-center gap-2 rounded-2xl bg-[var(--paper)] px-4 py-2.5 text-right shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.06] dark:bg-neutral-900 dark:ring-white/10 sm:flex">
                 <div>
                   <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
-                    Sesión
+                    Cuenta
                   </span>
                   <strong className="text-sm font-semibold text-[var(--ink)]">
-                    {sessionExisted ? "Compartida" : "Activa"}
+                    {accountMode === "individual"
+                      ? dinerName.trim() || "Individual"
+                      : sessionExisted
+                        ? "Iniciada"
+                        : "Nueva"}
                   </strong>
                 </div>
               </div>
@@ -861,15 +1023,51 @@ export function MenuClient({
       </header>
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        {sessionExisted && session && (
+        {tableCode !== "LLEVAR" && sessionExisted && session && sessionOrders.length > 0 && accountMode === "undecided" && (
+          <div className="animate-fade-in mt-2.5 rounded-[1.4rem] bg-[var(--paper)] p-3.5 shadow-[0_2px_10px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.06] dark:bg-neutral-900 dark:ring-white/10 sm:p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300">
+                  Mesa {tableCode} · Cuenta iniciada ({money(sessionTotal)})
+                </p>
+                <p className="mt-0.5 text-sm font-semibold text-[var(--ink)]">
+                  ¿Es cuenta nueva o te unes a la cuenta actual?
+                </p>
+                <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                  Si son varias personas y quieren pagar por separado, elige cuenta nueva / separada.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setAccountSheetOpen(true)}
+                className="focus-ring flex min-h-10 items-center justify-center gap-1.5 rounded-full bg-neutral-950 px-3.5 text-xs font-semibold text-white transition active:opacity-80 dark:bg-white dark:text-neutral-950"
+              >
+                <UserPlus size={14} /> Cuenta nueva / Separada
+              </button>
+              <button
+                type="button"
+                onClick={() => joinExistingAccount()}
+                className="focus-ring flex min-h-10 items-center justify-center gap-1.5 rounded-full bg-black/[0.055] px-3.5 text-xs font-semibold text-[var(--ink)] transition active:opacity-80 dark:bg-white/[0.1] dark:text-white"
+              >
+                <Users size={14} /> Unirme a la cuenta
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tableCode !== "LLEVAR" && sessionExisted && session && accountMode === "shared" && (
           <div className="animate-fade-in mt-2 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl bg-[var(--paper)] px-3.5 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] ring-1 ring-black/[0.05] dark:bg-neutral-900 dark:ring-white/10 sm:flex-nowrap">
             <div className="flex min-w-0 items-center gap-2.5 text-xs sm:text-sm">
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-amber-100/90 text-xs dark:bg-amber-500/20">
                 👥
               </span>
               <div className="min-w-0 leading-snug">
-                <span className="font-semibold text-[var(--ink)]">Mesa compartida</span>
-                <span className="text-neutral-500 dark:text-neutral-400"> · Se agrupa en cocina</span>
+                <span className="font-semibold text-[var(--ink)]">Cuenta grupal</span>
+                <span className="text-neutral-500 dark:text-neutral-400">
+                  {dinerName.trim() ? ` · ${dinerName.trim()}` : " · Se suma a la mesa"}
+                </span>
               </div>
             </div>
             <label className="flex shrink-0 cursor-pointer items-center gap-2">
@@ -1225,15 +1423,15 @@ export function MenuClient({
           variant="sheet"
           initialFocus={false}
           showCloseButton={false}
-          overlayClassName="bg-[#171411]/60 backdrop-blur-[3px]"
+          overlayClassName="bg-black/45 backdrop-blur-[4px]"
           className="gap-0 bg-[var(--paper)] p-0 text-[var(--ink)] dark:bg-neutral-900 dark:text-neutral-100"
         >
-          <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5 dark:border-neutral-800 sm:px-5">
+          <div className="flex items-center justify-between border-b border-black/[0.06] px-4 py-3.5 dark:border-white/[0.08] sm:px-5">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--terracotta)] dark:text-[var(--gold)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
                 Servicio en mesa {tableCode}
               </p>
-              <DialogTitle className="font-display text-2xl font-bold text-[var(--ink)] dark:text-neutral-100">
+              <DialogTitle className="font-display text-2xl font-semibold tracking-[-0.025em] text-[var(--ink)] dark:text-neutral-100">
                 ¿En qué te ayudamos?
               </DialogTitle>
             </div>
@@ -1241,28 +1439,52 @@ export function MenuClient({
               type="button"
               aria-label="Cerrar atención en mesa"
               onClick={() => setServiceSheetOpen(false)}
-              className="focus-ring grid h-10 w-10 place-items-center rounded-full bg-[#eee8dc] text-[var(--ink)] transition active:opacity-75 dark:bg-neutral-800 dark:text-neutral-100"
+              className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-black/[0.06] text-[var(--ink)] transition active:opacity-75 dark:bg-white/[0.1] dark:text-neutral-100"
             >
               <X size={18} />
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-5">
+          <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-4 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-5">
+            {/* Tipo de cuenta activo + botón cambiar */}
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-black/[0.035] px-4 py-3 dark:bg-white/[0.05]">
+              <div className="min-w-0">
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                  Tipo de cuenta
+                </span>
+                <strong className="block truncate text-sm font-semibold">
+                  {accountMode === "individual"
+                    ? `Cuenta individual${dinerName.trim() ? ` · ${dinerName.trim()}` : ""}`
+                    : `Cuenta grupal · Mesa ${tableCode}`}
+                </strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setServiceSheetOpen(false);
+                  setAccountSheetOpen(true);
+                }}
+                className="focus-ring shrink-0 rounded-full bg-[var(--paper)] px-3.5 py-2 text-xs font-semibold text-[var(--ink)] shadow-xs ring-1 ring-black/[0.06] transition active:opacity-80 dark:bg-neutral-800 dark:text-white dark:ring-white/10"
+              >
+                Cambiar
+              </button>
+            </div>
+
             <button
               type="button"
               disabled={waiterCalled}
               onClick={callWaiter}
-              className="focus-ring flex w-full items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white p-4 text-left shadow-xs transition active:opacity-85 disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-800/80"
+              className="focus-ring flex w-full items-center justify-between gap-3 rounded-2xl bg-[var(--paper)] p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.03)] ring-1 ring-black/[0.06] transition active:opacity-85 disabled:opacity-60 dark:bg-neutral-800/70 dark:ring-white/[0.08]"
             >
               <span className="flex items-center gap-3">
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-neutral-950 text-white dark:bg-white dark:text-neutral-950">
                   {waiterCalled ? <Check size={19} strokeWidth={3} /> : <Hand size={19} />}
                 </span>
                 <span>
-                  <strong className="block text-sm font-bold">
+                  <strong className="block text-sm font-semibold">
                     {waiterCalled ? "Mesero en camino" : "Llamar al mesero"}
                   </strong>
-                  <span className="block text-xs text-neutral-600 dark:text-neutral-400">
+                  <span className="block text-xs text-neutral-500 dark:text-neutral-400">
                     {waiterCalled
                       ? "Ya avisamos a tu mesa. Espera un momento."
                       : "Servilletas, salsa, dudas o cualquier apoyo"}
@@ -1271,14 +1493,14 @@ export function MenuClient({
               </span>
             </button>
 
-            <div className="rounded-2xl border border-[var(--line)] bg-[#fbf7f1] p-4 dark:border-neutral-800 dark:bg-neutral-800/60">
+            <div className="rounded-2xl bg-black/[0.035] p-4 dark:bg-white/[0.05]">
               <div className="flex items-center gap-2">
-                <Receipt size={18} className="text-[var(--brown)] dark:text-[var(--gold)]" />
-                <strong className="text-sm font-bold">
+                <Receipt size={17} className="text-[var(--ink)]" />
+                <strong className="text-sm font-semibold">
                   {billRequested ? "Cuenta solicitada" : "Pedir la cuenta"}
                 </strong>
               </div>
-              <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                 {billRequested
                   ? "Avisamos al mesero con tu preferencia de pago."
                   : "Elige cómo prefieres pagar para que el mesero llegue preparado."}
@@ -1294,7 +1516,7 @@ export function MenuClient({
                     type="button"
                     disabled={billRequested}
                     onClick={() => requestBill(opt.value)}
-                    className="focus-ring flex flex-col items-center justify-center gap-1 rounded-xl border border-[var(--line)] bg-white px-2 py-3 text-xs font-bold text-[var(--ink)] transition hover:border-[var(--brown)] active:opacity-80 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                    className="focus-ring flex flex-col items-center justify-center gap-1 rounded-2xl bg-[var(--paper)] px-2 py-3 text-xs font-semibold text-[var(--ink)] shadow-[0_1px_2px_rgba(0,0,0,0.03)] ring-1 ring-black/[0.06] transition active:opacity-80 disabled:opacity-50 dark:bg-neutral-900 dark:text-neutral-100 dark:ring-white/10"
                   >
                     <span className="text-lg" aria-hidden="true">{opt.icon}</span>
                     <span>{opt.label}</span>
@@ -1304,31 +1526,151 @@ export function MenuClient({
             </div>
 
             {sessionOrders.length > 0 && (
-              <div className="rounded-2xl border border-[var(--line)] bg-white p-4 dark:border-neutral-800 dark:bg-neutral-800/50">
+              <div className="rounded-2xl bg-[var(--paper)] p-4 ring-1 ring-black/[0.06] dark:bg-neutral-800/40 dark:ring-white/[0.08]">
                 <div className="flex items-center justify-between">
-                  <strong className="text-sm font-bold">Consumo de tu mesa</strong>
-                  <strong className="text-base font-extrabold text-[var(--brown-dark)] dark:text-[var(--gold-light)]">
-                    {money(sessionTotal)}
+                  <strong className="text-sm font-semibold">
+                    {accountMode === "individual"
+                      ? `Tu consumo (${dinerName.trim() || "Individual"})`
+                      : "Consumo de tu mesa"}
+                  </strong>
+                  <strong className="text-base font-bold tabular-nums text-[var(--ink)]">
+                    {money(accountMode === "individual" ? myTotal : sessionTotal)}
                   </strong>
                 </div>
-                <ul className="mt-3 divide-y divide-[var(--line)]/60 dark:divide-neutral-700/60">
-                  {sessionOrders.map((ord) => (
-                    <li key={ord.id} className="flex items-center justify-between gap-2 py-2.5 text-xs">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold">Folio {ord.folio}</span>
-                          <StatusPill status={ord.status} />
+
+                {/* Desglose automático por persona si hay varios comensales */}
+                {ordersByPerson.length > 1 && (
+                  <div className="mt-3 rounded-xl bg-black/[0.03] p-3 dark:bg-white/[0.05]">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                      División por persona
+                    </p>
+                    <ul className="mt-2 space-y-1.5 text-xs">
+                      {ordersByPerson.map((person) => (
+                        <li key={person.name} className="flex items-center justify-between gap-2">
+                          <span className="truncate font-medium">
+                            {person.name}{" "}
+                            <span className="text-neutral-400">({person.count})</span>
+                          </span>
+                          <strong className="tabular-nums">{money(person.total)}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {myOrders.length === 0 ? (
+                  <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+                    Tu cuenta individual está en $0. Los pedidos que envíes aparecerán aquí.
+                  </p>
+                ) : (
+                  <ul className="mt-3 divide-y divide-black/[0.06] dark:divide-white/[0.08]">
+                    {myOrders.map((ord) => (
+                      <li key={ord.id} className="flex items-center justify-between gap-2 py-2.5 text-xs">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-semibold">Folio {ord.folio}</span>
+                            {ord.customerName && (
+                              <span className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[10px] font-semibold dark:bg-white/10">
+                                {ord.customerName}
+                              </span>
+                            )}
+                            <StatusPill status={ord.status} />
+                          </div>
+                          <p className="mt-1 truncate text-neutral-500 dark:text-neutral-400">
+                            {ord.items.map((i) => `${i.quantity}× ${i.name}`).join(" · ") || "Pedido registrado"}
+                          </p>
                         </div>
-                        <p className="mt-1 truncate text-neutral-600 dark:text-neutral-400">
-                          {ord.items.map((i) => `${i.quantity}× ${i.name}`).join(" · ") || "Pedido registrado"}
-                        </p>
-                      </div>
-                      <strong className="shrink-0 text-sm">{money(ord.total)}</strong>
-                    </li>
-                  ))}
-                </ul>
+                        <strong className="shrink-0 text-sm tabular-nums">{money(ord.total)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hoja para elegir Cuenta nueva / Separada vs. Cuenta ya iniciada */}
+      <Dialog open={accountSheetOpen} onOpenChange={setAccountSheetOpen}>
+        <DialogContent
+          variant="sheet"
+          initialFocus={false}
+          showCloseButton={false}
+          overlayClassName="bg-black/45 backdrop-blur-[4px]"
+          className="gap-0 bg-[var(--paper)] p-0 text-[var(--ink)] dark:bg-neutral-900 dark:text-neutral-100"
+        >
+          <div className="flex items-center justify-between border-b border-black/[0.06] px-4 py-3.5 dark:border-white/[0.08] sm:px-5">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                Mesa {tableCode}
+              </p>
+              <DialogTitle className="font-display text-2xl font-semibold tracking-[-0.025em]">
+                ¿Cómo llevan la cuenta?
+              </DialogTitle>
+            </div>
+            <button
+              type="button"
+              aria-label="Cerrar selector de cuenta"
+              onClick={() => setAccountSheetOpen(false)}
+              className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-black/[0.06] text-[var(--ink)] transition active:opacity-75 dark:bg-white/[0.1] dark:text-neutral-100"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="space-y-4 px-4 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-5">
+            <label className="block text-[13px] font-semibold text-neutral-700 dark:text-neutral-300">
+              Tu nombre (para separar tus platillos)
+              <input
+                type="text"
+                maxLength={40}
+                value={dinerName}
+                onChange={(e) => setDinerName(e.target.value)}
+                placeholder="Ej. Sofía, Carlos, Mesa 1…"
+                className="mt-2 w-full rounded-2xl bg-black/[0.045] px-4 py-3 text-base font-normal text-[var(--ink)] outline-none ring-1 ring-transparent transition focus:bg-[var(--paper)] focus:ring-black/15 dark:bg-white/[0.08] dark:text-white dark:focus:bg-neutral-800 dark:focus:ring-white/25"
+              />
+            </label>
+
+            <div className="grid gap-2.5">
+              <button
+                type="button"
+                disabled={startingFreshAccount}
+                onClick={() => void startFreshAccount(dinerName)}
+                className="focus-ring flex w-full items-start gap-3 rounded-2xl bg-neutral-950 p-4 text-left text-white shadow-sm transition active:opacity-85 disabled:opacity-50 dark:bg-white dark:text-neutral-950"
+              >
+                <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/15 dark:bg-black/10">
+                  <UserPlus size={19} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-sm font-semibold">
+                    {startingFreshAccount ? "Iniciando cuenta nueva…" : "Cuenta nueva / Separada ($0)"}
+                  </strong>
+                  <span className="mt-0.5 block text-xs opacity-75">
+                    Empieza en cero. Ideal si acabas de llegar o si van a dividir la cuenta por persona.
+                  </span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => joinExistingAccount(dinerName)}
+                className="focus-ring flex w-full items-start gap-3 rounded-2xl bg-black/[0.045] p-4 text-left text-[var(--ink)] transition active:opacity-85 dark:bg-white/[0.08] dark:text-white"
+              >
+                <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-black/[0.06] dark:bg-white/10">
+                  <Users size={19} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-sm font-semibold">
+                    Unirme a la cuenta iniciada
+                    {sessionOrders.length > 0 ? ` (${money(sessionTotal)})` : ""}
+                  </strong>
+                  <span className="mt-0.5 block text-xs text-neutral-500 dark:text-neutral-400">
+                    Todos los pedidos de la mesa se suman en una sola cuenta grupal.
+                  </span>
+                </span>
+              </button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

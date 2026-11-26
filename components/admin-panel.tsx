@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Activity,
   BarChart3,
   Coffee,
   CupSoda,
@@ -20,7 +21,9 @@ import {
   Plus,
   QrCode,
   RefreshCw,
+  RotateCcw,
   Save,
+  Search,
   Settings2,
   Store,
   Trash2,
@@ -28,10 +31,12 @@ import {
   ToggleLeft,
   ToggleRight
 } from "lucide-react";
+import { AdminOverview } from "@/components/admin-overview";
 import { Brand } from "@/components/brand";
 import { ProductImage } from "@/components/product-image";
 import { DrinksAdmin } from "@/components/drinks-admin";
 import { PromosAdmin } from "@/components/promos-admin";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -65,7 +70,7 @@ const helpSections = [
 export function AdminPanel() {
   const [pin, setPin] = useState("");
   const [ready, setReady] = useState(false);
-  const [tab, setTab] = useState("menu");
+  const [tab, setTab] = useState("overview");
   const [products, setProducts] = useState<Product[]>(seedProducts);
   const [editing, setEditing] = useState<Product | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -260,6 +265,7 @@ export function AdminPanel() {
   }
 
   const nav = [
+    ["overview", "Resumen", Activity],
     ["menu", "Menú", LayoutGrid],
     ["breakfast", "Desayunos", Coffee],
     ["drinks", "Bebidas", CupSoda],
@@ -280,12 +286,13 @@ export function AdminPanel() {
               type="button"
               onClick={() => setHelpOpen(true)}
               aria-label="Abrir ayuda"
-              className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--paper)] px-4 py-2 text-xs font-semibold text-[var(--muted-foreground)] shadow-sm transition-colors hover:bg-[var(--gold-light)] hover:text-[var(--charcoal)] dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--paper)] px-3.5 py-2 text-xs font-semibold text-[var(--muted-foreground)] shadow-sm transition-colors hover:bg-[var(--gold-light)] hover:text-[var(--charcoal)] dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
             >
               <CircleHelp size={16} />
-              Ayuda
+              <span className="hidden sm:inline">Ayuda</span>
             </button>
-            <span className="rounded-full bg-[#e4ece6] px-4 py-2 text-xs font-bold">
+            <ThemeToggle />
+            <span className="hidden rounded-full bg-black/[0.06] px-3.5 py-2 text-xs font-semibold text-[var(--ink)] dark:bg-white/[0.1] dark:text-white sm:inline-flex">
               Panel administrativo
             </span>
           </div>
@@ -308,6 +315,14 @@ export function AdminPanel() {
           </div>
           <section className="mt-5">
             <div className="mt-5">
+              <TabsContent value="overview">
+                <AdminOverview
+                  pin={pin}
+                  productCount={products.length}
+                  soldOutCount={products.filter((p) => p.soldOut).length}
+                  onNavigateTab={setTab}
+                />
+              </TabsContent>
               <TabsContent value="menu">
                 <MenuAdmin
                   products={products}
@@ -430,6 +445,22 @@ function MenuAdmin({
   onDelete: (product: Product) => void;
   onCreate: () => void;
 }) {
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "available" | "soldOut" | "popular">("all");
+
+  const filtered = products.filter((p) => {
+    if (filter === "available" && p.soldOut) return false;
+    if (filter === "soldOut" && !p.soldOut) return false;
+    if (filter === "popular" && !p.popular) return false;
+    const q = search.trim().toLocaleLowerCase("es");
+    if (q) {
+      return `${p.name} ${p.category} ${p.description}`.toLocaleLowerCase("es").includes(q);
+    }
+    return true;
+  });
+
+  const soldOutTotal = products.filter((p) => p.soldOut).length;
+
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -449,8 +480,44 @@ function MenuAdmin({
           <Plus size={16} /> Nuevo producto
         </button>
       </div>
+
+      {/* Buscador + Filtros rápidos */}
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <label className="flex flex-1 items-center gap-2.5 rounded-full bg-black/[0.05] px-4 py-2.5 dark:bg-white/[0.08] sm:max-w-sm">
+          <Search size={16} className="shrink-0 text-neutral-500" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar platillo o categoría…"
+            className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-500"
+          />
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {([
+            ["all", `Todos (${products.length})`],
+            ["available", `Disponibles (${products.length - soldOutTotal})`],
+            ["soldOut", `Agotados (${soldOutTotal})`],
+            ["popular", "Populares"]
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className={`focus-ring rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                filter === key
+                  ? "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950"
+                  : "bg-black/[0.05] text-neutral-600 hover:bg-black/[0.08] dark:bg-white/[0.08] dark:text-neutral-300"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {products.map((product) => (
+        {filtered.map((product) => (
           <article className="paper menu-card relative flex gap-3 rounded-2xl p-3" key={product.id}>
             <ProductImage
               src={product.image}
@@ -458,9 +525,16 @@ function MenuAdmin({
               className="h-24 w-24 shrink-0 rounded-xl"
             />
             <div className="min-w-0 flex-1">
-              <h2 className="truncate font-bold">{product.name || "Producto nuevo"}</h2>
-              <p className="mt-1 text-sm">{money(product.price)}</p>
-              <p className="mt-1 truncate text-xs text-[var(--muted-foreground)]">{product.category}</p>
+              <div className="flex items-start justify-between gap-1">
+                <h2 className="truncate font-bold">{product.name || "Producto nuevo"}</h2>
+                {product.soldOut && (
+                  <span className="shrink-0 rounded-full bg-red-500/12 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-300">
+                    Agotado
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-sm font-semibold tabular-nums">{money(product.price)}</p>
+              <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">{product.category}</p>
               <div className="mt-3 flex items-center justify-between gap-2">
                 <button
                   className={BTN_ICON}
@@ -493,6 +567,11 @@ function MenuAdmin({
             </div>
           </article>
         ))}
+        {filtered.length === 0 && (
+          <p className="col-span-full py-10 text-center text-sm text-neutral-500">
+            No hay platillos que coincidan con ese filtro.
+          </p>
+        )}
       </div>
     </>
   );
@@ -1597,11 +1676,35 @@ function TablesAdmin({ pin }: { pin: string }) {
                   )}
                 </div>
 
-                <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-2.5">
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--line)] pt-2.5">
                   <span className="text-[10px] text-[var(--muted-foreground)]">QR → /mesa/{table.code}</span>
-                  <span className="text-[10px] text-[var(--muted-foreground)]">
-                    {table.active ? "Activa" : "Desactivada"}
-                  </span>
+                  {hasConsumption && table.active ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (
+                          !window.confirm(
+                            `¿Reiniciar la cuenta de la Mesa ${table.code} a $0?`
+                          )
+                        ) {
+                          return;
+                        }
+                        const res = await fetch("/api/sessions", {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({ tableCode: table.code, forceNew: true, pin })
+                        });
+                        if (res.ok) await loadTables();
+                      }}
+                      className="focus-ring inline-flex items-center gap-1 rounded-full bg-neutral-950 px-2.5 py-1 text-[10px] font-semibold text-white transition active:opacity-80 dark:bg-white dark:text-neutral-950"
+                    >
+                      <RotateCcw size={11} /> Reiniciar $0
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-[var(--muted-foreground)]">
+                      {table.active ? "Activa" : "Desactivada"}
+                    </span>
+                  )}
                 </div>
               </article>
             );
@@ -1912,6 +2015,31 @@ function SalesAdmin({ pin }: { pin: string }) {
     window.open(`/api/admin/sales/pdf?${params.toString()}`, "_blank");
   }
 
+  function exportCsv() {
+    if (!report) return;
+    const range = salesRange(period);
+    const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const header = ["Folio", "Mesa", "Comensal", "Fecha", "Pago", "Estado", "Total", "Platillos"];
+    const rows = report.orders.map((o) => [
+      o.folio,
+      o.tableCode,
+      o.customerName || "",
+      new Date(o.createdAt).toLocaleString("es-MX"),
+      o.paymentMethod === "card" ? "Tarjeta" : o.paymentMethod === "cash" ? "Efectivo" : "Sin asignar",
+      o.status,
+      o.total,
+      o.items.map((i) => `${i.quantity}x ${i.name}`).join(" | ")
+    ]);
+    const csv = [header, ...rows].map((row) => row.map(escape).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `corte-imperio-${range.from}-${range.to}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => void load(period), 0);
     const interval = window.setInterval(() => void load(period), 10000);
@@ -1942,18 +2070,27 @@ function SalesAdmin({ pin }: { pin: string }) {
             en el restaurante.
           </p>
         </div>
-        <button
-          className={BTN_SECONDARY}
-          onClick={() => void load()}
-        >
-          <RefreshCw className={loading ? "animate-spin" : ""} size={15} /> Actualizar
-        </button>
-        <button
-          className={BTN_PRIMARY}
-          onClick={exportPdf}
-        >
-          <FileDown size={15} /> Exportar PDF
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={BTN_SECONDARY}
+            onClick={() => void load()}
+          >
+            <RefreshCw className={loading ? "animate-spin" : ""} size={15} /> Actualizar
+          </button>
+          <button
+            className={BTN_SECONDARY}
+            disabled={!report}
+            onClick={exportCsv}
+          >
+            <FileDown size={15} /> Exportar CSV
+          </button>
+          <button
+            className={BTN_PRIMARY}
+            onClick={exportPdf}
+          >
+            <FileDown size={15} /> Exportar PDF
+          </button>
+        </div>
       </div>
 
       <div className="mt-5 inline-flex rounded-full bg-neutral-100 p-1 dark:bg-neutral-800">

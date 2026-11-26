@@ -1051,7 +1051,14 @@ function KitchenCard({
               )}
             </>
           ) : (
-            <p className="text-xs uppercase tracking-wider text-[#d9c17f]">Mesa {order.tableCode}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs uppercase tracking-wider text-[#d9c17f]">Mesa {order.tableCode}</p>
+              {order.customerName && (
+                <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                  👤 {order.customerName}
+                </span>
+              )}
+            </div>
           )}
           <strong className="mt-1 block font-display text-4xl">{order.folio}</strong>
         </div>
@@ -1218,31 +1225,67 @@ function SessionAccountModal({
   const pendingOrdersCount = orders.length;
   const canClose = pendingOrdersCount === 0;
   const [splitCount, setSplitCount] = useState(2);
+  const [startingNew, setStartingNew] = useState(false);
   const splitAmount = splitCount > 0 ? allTotal / splitCount : allTotal;
 
+  // Agrupar consumo por persona (customerName) para dividir la cuenta exactamente
+  const byPersonMap = new Map<string, { name: string; count: number; total: number }>();
+  for (const ord of activeOrders) {
+    const label = ord.customerName?.trim() || "Mesa general";
+    const entry = byPersonMap.get(label) || { name: label, count: 0, total: 0 };
+    entry.count += 1;
+    entry.total += Number(ord.total || 0);
+    byPersonMap.set(label, entry);
+  }
+  const byPerson = [...byPersonMap.values()].sort((a, b) => b.total - a.total);
+
+  async function handleForceNewAccount() {
+    if (
+      !window.confirm(
+        `¿Iniciar una cuenta nueva en $0 para la mesa ${tableCode}? La sesión actual se cerrará para futuros escaneos QR.`
+      )
+    ) {
+      return;
+    }
+    setStartingNew(true);
+    try {
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tableCode, forceNew: true, pin })
+      });
+      if (res.ok) {
+        onClose();
+      }
+    } finally {
+      setStartingNew(false);
+    }
+  }
+
   return (
-    <div className="animate-fade-in fixed inset-0 z-[60] flex items-end overflow-hidden bg-[#171411]/70 backdrop-blur-[3px] lg:items-center lg:justify-center lg:p-5">
+    <div className="animate-fade-in fixed inset-0 z-[60] flex items-end overflow-hidden bg-black/55 backdrop-blur-[4px] lg:items-center lg:justify-center lg:p-5">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="session-title"
-        className="animate-scale-in w-full max-w-2xl rounded-t-[2rem] bg-[var(--paper)] shadow-2xl lg:rounded-[2rem]"
+        className="w-full max-w-2xl overflow-hidden rounded-t-[2rem] bg-[var(--paper)] text-[var(--ink)] shadow-2xl ring-1 ring-black/[0.08] dark:bg-neutral-900 dark:text-neutral-100 dark:ring-white/10 lg:rounded-[2rem]"
       >
-        <div className="border-b border-[var(--line)] p-5 sm:p-7">
+        <div className="border-b border-black/[0.06] p-5 dark:border-white/[0.08] sm:p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-[var(--terracotta)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
                 Mesa {tableCode}
               </p>
-              <h2 id="session-title" className="mt-1 font-display text-2xl font-bold">
-                Cuenta de sesión
+              <h2 id="session-title" className="mt-0.5 font-display text-2xl font-semibold tracking-[-0.025em]">
+                Cuenta de mesa
               </h2>
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Sesión #{sessionId.slice(0, 8)} · {allOrders.length} pedidos
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                Sesión #{sessionId.slice(0, 8)} · {activeOrders.length} pedidos activos
               </p>
             </div>
             <button
-              className="focus-ring grid h-10 w-10 place-items-center rounded-full bg-[#eee8dc]"
+              type="button"
+              className="focus-ring grid h-10 w-10 place-items-center rounded-full bg-black/[0.06] text-[var(--ink)] transition active:opacity-75 dark:bg-white/[0.1] dark:text-white"
               aria-label="Cerrar"
               onClick={onClose}
             >
@@ -1251,19 +1294,56 @@ function SessionAccountModal({
           </div>
         </div>
 
-        <div className="max-h-[60dvh] overflow-y-auto p-5 sm:p-7">
+        <div className="max-h-[52dvh] overflow-y-auto p-5 sm:p-6">
+          {/* ── División exacta por persona ── */}
+          {byPerson.length > 0 && (
+            <div className="mb-4 rounded-2xl bg-black/[0.035] p-4 dark:bg-white/[0.05]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                Cuenta por persona ({byPerson.length})
+              </p>
+              <ul className="mt-2.5 space-y-2 text-sm">
+                {byPerson.map((person) => (
+                  <li
+                    key={person.name}
+                    className="flex items-center justify-between gap-3 rounded-xl bg-[var(--paper)] px-3.5 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] ring-1 ring-black/[0.05] dark:bg-neutral-800/80 dark:ring-white/[0.08]"
+                  >
+                    <span className="min-w-0 truncate font-semibold">
+                      👤 {person.name}{" "}
+                      <span className="text-xs font-normal text-neutral-500 dark:text-neutral-400">
+                        · {person.count} {person.count === 1 ? "pedido" : "pedidos"}
+                      </span>
+                    </span>
+                    <strong className="shrink-0 text-base font-bold tabular-nums">
+                      {money(person.total)}
+                    </strong>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {allOrders.length === 0 ? (
-            <p className="text-center text-sm text-[var(--muted-foreground)]">
+            <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
               Esta sesión aún no tiene pedidos.
             </p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {allOrders.map((order) => (
-                <article key={order.id} className="paper rounded-2xl p-4 shadow-sm">
+                <article
+                  key={order.id}
+                  className="rounded-2xl bg-[var(--paper)] p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] ring-1 ring-black/[0.06] dark:bg-neutral-800/60 dark:ring-white/[0.08]"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <strong className="font-display">{order.folio}</strong>
-                      <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="font-display text-base">{order.folio}</strong>
+                        {order.customerName && (
+                          <span className="rounded-full bg-black/[0.06] px-2.5 py-0.5 text-[11px] font-semibold dark:bg-white/10">
+                            👤 {order.customerName}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                         {new Date(order.createdAt).toLocaleTimeString("es-MX", {
                           hour: "2-digit",
                           minute: "2-digit"
@@ -1272,7 +1352,7 @@ function SessionAccountModal({
                     </div>
                     <div className="text-right">
                       <strong
-                        className={`text-lg ${order.status === "cancelled" ? "text-[var(--muted-foreground)] line-through" : ""}`}
+                        className={`block text-lg tabular-nums ${order.status === "cancelled" ? "text-neutral-400 line-through" : ""}`}
                       >
                         {money(order.total)}
                       </strong>
@@ -1281,22 +1361,24 @@ function SessionAccountModal({
                   </div>
                   <ul className="mt-3 space-y-1.5 text-sm">
                     {order.items.map((item, index) => (
-                      <li key={item.itemId || `${item.productId}-${index}`} className="flex justify-between">
+                      <li key={item.itemId || `${item.productId}-${index}`} className="flex justify-between gap-2">
                         <span>
                           {item.quantity}× {item.name}
-                          {item.option && <span className="text-[var(--muted-foreground)]"> · {item.option}</span>}
+                          {item.option && <span className="text-neutral-500 dark:text-neutral-400"> · {item.option}</span>}
                           {item.extras && item.extras.length > 0 && (
-                            <span className="block text-xs text-[var(--terracotta)]">
+                            <span className="block text-xs text-amber-700 dark:text-amber-300">
                               Extras: {item.extras.map((e) => e.name).join(", ")}
                             </span>
                           )}
                         </span>
-                        <span className="text-[var(--muted-foreground)]">{money(item.unitPrice * item.quantity)}</span>
+                        <span className="shrink-0 tabular-nums text-neutral-500 dark:text-neutral-400">
+                          {money(item.unitPrice * item.quantity)}
+                        </span>
                       </li>
                     ))}
                   </ul>
                   {order.notes && (
-                    <p className="mt-2 text-xs text-[var(--muted-foreground)]">Nota: {order.notes}</p>
+                    <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">Nota: {order.notes}</p>
                   )}
                 </article>
               ))}
@@ -1304,70 +1386,86 @@ function SessionAccountModal({
           )}
         </div>
 
-        <div className="border-t border-[var(--line)] bg-[#faf7f3] p-5 sm:p-7">
-          <div className="mb-4 space-y-2 text-sm">
+        <div className="border-t border-black/[0.06] bg-black/[0.025] p-5 dark:border-white/[0.08] dark:bg-neutral-950/60 sm:p-6">
+          <div className="mb-4 space-y-2.5 text-sm">
             <div className="flex justify-between">
-              <span className="text-[var(--muted-foreground)]">Pedidos pendientes</span>
-              <strong>{pendingOrdersCount}</strong>
+              <span className="text-neutral-500 dark:text-neutral-400">Pedidos pendientes</span>
+              <strong className="tabular-nums">{pendingOrdersCount}</strong>
             </div>
             <div className="flex justify-between">
-              <span className="text-[var(--muted-foreground)]">Total acumulado</span>
-              <strong className="text-xl text-[var(--brown)]">{money(allTotal)}</strong>
+              <span className="text-neutral-500 dark:text-neutral-400">Total acumulado</span>
+              <strong className="text-xl font-bold tabular-nums">{money(allTotal)}</strong>
             </div>
 
-            {/* ── Dividir cuenta ── */}
-            <div className="rounded-2xl border border-[var(--line)] bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Dividir cuenta</p>
-              <div className="mt-3 flex items-center gap-3">
+            {/* ── Dividir en partes iguales ── */}
+            <div className="rounded-2xl bg-[var(--paper)] p-3.5 ring-1 ring-black/[0.06] dark:bg-neutral-900 dark:ring-white/10">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                Dividir en partes iguales
+              </p>
+              <div className="mt-2.5 flex items-center gap-2.5">
                 <button
-                  className="focus-ring grid h-9 w-9 place-items-center rounded-xl border border-[var(--line)] bg-white font-bold"
+                  type="button"
+                  className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-black/[0.06] font-bold dark:bg-white/10"
                   aria-label="Menos personas"
                   onClick={() => setSplitCount((v) => Math.max(1, v - 1))}
                 >
                   <Minus size={16} />
                 </button>
-                <strong className="w-8 text-center text-lg">{splitCount}</strong>
+                <strong className="w-7 text-center text-base tabular-nums">{splitCount}</strong>
                 <button
-                  className="focus-ring grid h-9 w-9 place-items-center rounded-xl border border-[var(--line)] bg-white font-bold"
+                  type="button"
+                  className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-black/[0.06] font-bold dark:bg-white/10"
                   aria-label="Más personas"
                   onClick={() => setSplitCount((v) => Math.min(20, v + 1))}
                 >
                   <Plus size={16} />
                 </button>
-                <span className="text-sm text-[var(--muted-foreground)]">personas</span>
-                <span className="ml-auto font-display text-xl font-bold text-[var(--brown)]">
+                <span className="text-xs text-neutral-500 dark:text-neutral-400">personas</span>
+                <span className="ml-auto font-display text-lg font-bold tabular-nums">
                   {money(splitAmount)} c/u
                 </span>
               </div>
             </div>
           </div>
 
-          {canClose ? (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {canClose ? (
+              <button
+                type="button"
+                className="focus-ring flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 text-sm font-semibold text-white shadow-sm transition active:opacity-85 disabled:opacity-50 dark:bg-white dark:text-neutral-950"
+                disabled={closing}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `¿Cerrar la sesión de la mesa ${tableCode}? La mesa quedará lista en $0 para el siguiente cliente.`
+                    )
+                  ) {
+                    onCloseSession();
+                  }
+                }}
+              >
+                {closing ? "Cerrando…" : "Cerrar cuenta y liberar mesa"}
+              </button>
+            ) : (
+              <div className="flex-1 rounded-2xl bg-amber-500/12 px-4 py-3 text-xs text-amber-900 ring-1 ring-amber-500/25 dark:text-amber-200">
+                <p className="font-semibold">
+                  Quedan {pendingOrdersCount} pedido(s) pendientes.
+                </p>
+                <p className="mt-0.5 opacity-80">
+                  Entrégalos o inicia una cuenta nueva si son comensales distintos.
+                </p>
+              </div>
+            )}
+
             <button
-              className="focus-ring flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--gold)] px-5 font-bold text-[var(--charcoal)] shadow-lg transition hover:opacity-90"
-              disabled={closing}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `¿Cerrar la sesión de la mesa ${tableCode}? Se marcarán todos los pedidos como cerrados.\n\nPIN: ${pin}`
-                  )
-                ) {
-                  onCloseSession();
-                }
-              }}
+              type="button"
+              disabled={startingNew}
+              onClick={() => void handleForceNewAccount()}
+              className="focus-ring flex min-h-12 items-center justify-center gap-2 rounded-full bg-black/[0.06] px-4 text-xs font-semibold text-[var(--ink)] transition active:opacity-80 disabled:opacity-50 dark:bg-white/[0.1] dark:text-white"
             >
-              {closing ? "Cerrando…" : "Cerrar sesión"}
+              {startingNew ? "Reiniciando…" : "Iniciar cuenta nueva ($0)"}
             </button>
-          ) : (
-            <div className="rounded-2xl bg-[#f4dfb4]/60 p-4 text-sm">
-              <p className="font-bold text-[#694500]">
-                Quedan {pendingOrdersCount} pedido(s) pendientes.
-              </p>
-              <p className="mt-1 text-xs text-[#694500]/80">
-                Marca todos los pedidos como entregados para poder cerrar la cuenta.
-              </p>
-            </div>
-          )}
+          </div>
         </div>
       </section>
     </div>
