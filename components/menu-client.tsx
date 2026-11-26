@@ -1523,6 +1523,13 @@ function ProductDialog({
   const isBreakfast = product.category === "Desayunos";
   const isComidaALaCarta = product.category === "Comidas a la carta";
 
+  // Asegurar que al abrir un platillo nunca quede desplazamiento horizontal residual
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.scrollX !== 0) {
+      window.scrollTo(0, window.scrollY);
+    }
+  }, []);
+
   // Load global breakfast extras for Desayunos products
   useEffect(() => {
     if (!isBreakfast) return;
@@ -1905,12 +1912,12 @@ function CartDrawer({
   const subtotal = calculateCartTotal(cart);
   return (
     <>
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 pb-3.5 pt-2 dark:border-neutral-800 sm:px-5 sm:pb-4 sm:pt-3">
+      <div className="flex items-center justify-between gap-3 border-b border-black/[0.06] px-4 pb-3.5 pt-2 dark:border-white/[0.08] sm:px-5 sm:pb-4 sm:pt-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-[var(--terracotta)] dark:text-[var(--gold)]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
             Revisa antes de enviar
           </p>
-          <DrawerTitle className="font-display text-2xl font-bold text-[var(--ink)] dark:text-neutral-100">
+          <DrawerTitle className="font-display text-2xl font-semibold tracking-[-0.03em] text-[var(--ink)]">
             Mi pedido
           </DrawerTitle>
         </div>
@@ -1918,50 +1925,56 @@ function CartDrawer({
           {cart.length > 0 && (
             <button
               type="button"
-              className="focus-ring flex min-h-10 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold text-[#8a3b30] transition hover:bg-[#f8e8e2] active:scale-95 dark:text-red-300 dark:hover:bg-red-950/40"
+              className="focus-ring flex min-h-9 items-center gap-1.5 rounded-full bg-red-500/10 px-3 text-xs font-semibold text-red-700 transition active:scale-95 dark:bg-red-500/15 dark:text-red-300"
               onClick={onRequestClear}
             >
-              <Trash2 size={14} /> Limpiar
+              <Trash2 size={13} /> Vaciar
             </button>
           )}
           <button
             type="button"
-            className="focus-ring grid h-10 w-10 place-items-center rounded-full bg-[#eee8dc] text-[var(--ink)] transition active:scale-90 dark:bg-neutral-800 dark:text-neutral-100"
+            className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-black/[0.06] text-[var(--ink)] transition active:scale-90 dark:bg-white/[0.1] dark:text-neutral-100"
             aria-label="Cerrar pedido"
             onClick={onClose}
           >
-            <X size={18} />
+            <X size={17} />
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
-        <ul className="divide-y divide-[var(--line)]/70 dark:divide-neutral-800">
+      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3.5 sm:px-5">
+        <ul className="divide-y divide-black/[0.06] dark:divide-white/[0.08]">
           {cart.map((item, index) => (
-            <li key={`${item.productId}-${index}`} className="flex gap-3 py-4 first:pt-1 last:pb-1">
+            <li key={`${item.productId}-${index}`} className="flex gap-3.5 py-4 first:pt-1 last:pb-1">
               <ProductImage
                 src={item.image}
                 alt={item.name}
-                className="h-20 w-20 shrink-0 rounded-2xl"
+                className="h-[4.75rem] w-[4.75rem] shrink-0 rounded-[1rem]"
               />
               <div className="min-w-0 flex-1">
-                <div className="flex justify-between gap-3">
-                  <h3 className="font-bold leading-tight">{item.name}</h3>
-                  <strong className="shrink-0">{money(cartItemTotal(item))}</strong>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-[15px] font-semibold leading-snug tracking-[-0.015em] text-[var(--ink)]">
+                    {item.name}
+                  </h3>
+                  <strong className="shrink-0 text-[15px] font-bold tabular-nums text-[var(--ink)]">
+                    {money(cartItemTotal(item))}
+                  </strong>
                 </div>
                 {item.option && (
-                  <p className="mt-1 text-xs font-medium text-[var(--brown)] dark:text-[var(--gold-light)]">{item.option}</p>
+                  <p className="mt-0.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                    {item.option}
+                  </p>
                 )}
                 {item.extras && item.extras.length > 0 && (
                   <div className="mt-1 space-y-0.5">
                     {item.extras.map((extra, extraIndex) => (
-                      <p key={extraIndex} className="text-xs text-[var(--terracotta)] dark:text-[var(--gold)]">
+                      <p key={extraIndex} className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
                         + {extra.name} ({money(extra.price)})
                       </p>
                     ))}
                   </div>
                 )}
                 <input
-                  className="mt-2 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-base outline-none transition focus:border-[var(--green)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+                  className="mt-2.5 w-full rounded-xl bg-black/[0.04] px-3 py-2 text-base text-[var(--ink)] outline-none ring-1 ring-transparent transition focus:bg-[var(--paper)] focus:ring-black/15 dark:bg-white/[0.07] dark:text-neutral-100 dark:focus:bg-neutral-800 dark:focus:ring-white/20"
                   placeholder="Nota para este platillo…"
                   maxLength={250}
                   value={item.notes || ""}
@@ -1971,33 +1984,37 @@ function CartDrawer({
                     onChange(next);
                   }}
                 />
-                <div className="mt-3 flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="focus-ring grid h-10 w-10 place-items-center rounded-full border border-[var(--line)] bg-white text-[var(--ink)] transition active:scale-90 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
-                    aria-label={`Restar ${item.name}`}
-                    onClick={() => {
-                      const next = [...cart];
-                      if (item.quantity === 1) next.splice(index, 1);
-                      else next[index] = { ...item, quantity: item.quantity - 1 };
-                      onChange(next);
-                    }}
-                  >
-                    <Minus size={16} />
-                  </button>
-                  <strong className="min-w-6 text-center">{item.quantity}</strong>
-                  <button
-                    type="button"
-                    className="focus-ring grid h-10 w-10 place-items-center rounded-full border border-[var(--line)] bg-white text-[var(--ink)] transition active:scale-90 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
-                    aria-label={`Sumar ${item.name}`}
-                    onClick={() => {
-                      const next = [...cart];
-                      next[index] = { ...item, quantity: Math.min(10, item.quantity + 1) };
-                      onChange(next);
-                    }}
-                  >
-                    <Plus size={16} />
-                  </button>
+                <div className="mt-2.5 flex items-center justify-between">
+                  <div className="inline-flex items-center rounded-full bg-black/[0.05] p-0.5 dark:bg-white/[0.09]">
+                    <button
+                      type="button"
+                      className="focus-ring grid h-8 w-8 place-items-center rounded-full text-[var(--ink)] transition active:scale-90"
+                      aria-label={`Restar ${item.name}`}
+                      onClick={() => {
+                        const next = [...cart];
+                        if (item.quantity === 1) next.splice(index, 1);
+                        else next[index] = { ...item, quantity: item.quantity - 1 };
+                        onChange(next);
+                      }}
+                    >
+                      {item.quantity === 1 ? <Trash2 size={14} className="text-red-600 dark:text-red-400" /> : <Minus size={15} />}
+                    </button>
+                    <strong className="min-w-7 text-center text-sm font-semibold tabular-nums">
+                      {item.quantity}
+                    </strong>
+                    <button
+                      type="button"
+                      className="focus-ring grid h-8 w-8 place-items-center rounded-full text-[var(--ink)] transition active:scale-90"
+                      aria-label={`Sumar ${item.name}`}
+                      onClick={() => {
+                        const next = [...cart];
+                        next[index] = { ...item, quantity: Math.min(10, item.quantity + 1) };
+                        onChange(next);
+                      }}
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </li>
@@ -2005,29 +2022,29 @@ function CartDrawer({
         </ul>
 
         {suggestions.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-[var(--line)]/80 bg-[#fbf7f1] p-3.5 dark:border-neutral-800 dark:bg-neutral-800/50">
-            <p className="text-xs font-bold uppercase tracking-wider text-[var(--brown)] dark:text-[var(--gold)]">
+          <div className="mt-4 rounded-2xl bg-black/[0.035] p-3.5 dark:bg-white/[0.05]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
               ¿Algo para acompañar?
             </p>
-            <div className="no-scrollbar -mx-1 mt-2.5 flex gap-2.5 overflow-x-auto px-1 pb-0.5">
+            <div className="no-scrollbar -mx-1 mt-2.5 flex gap-2 overflow-x-auto px-1 pb-0.5">
               {suggestions.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => onQuickAdd(item)}
-                  className="focus-ring flex w-40 shrink-0 items-center gap-2.5 rounded-xl border border-[var(--line)] bg-white p-2 text-left transition active:scale-95 dark:border-neutral-700 dark:bg-neutral-900"
+                  className="focus-ring flex w-44 shrink-0 items-center gap-2.5 rounded-2xl bg-[var(--paper)] p-2 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.05] transition active:scale-95 dark:bg-neutral-900 dark:ring-white/[0.08]"
                 >
                   <ProductImage
                     src={item.image}
                     alt={item.name}
                     category={item.category}
-                    className="h-11 w-11 shrink-0 rounded-lg"
+                    className="h-11 w-11 shrink-0 rounded-xl"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-bold text-[var(--ink)] dark:text-neutral-100">
+                    <span className="block truncate text-xs font-semibold text-[var(--ink)]">
                       {item.name}
                     </span>
-                    <span className="mt-0.5 block text-[11px] font-bold text-[var(--brown)] dark:text-[var(--gold-light)]">
+                    <span className="mt-0.5 block text-[11px] font-bold tabular-nums text-neutral-500 dark:text-neutral-400">
                       + {money(item.price)}
                     </span>
                   </span>
@@ -2037,10 +2054,10 @@ function CartDrawer({
           </div>
         )}
 
-        <label className="mt-4 block text-sm font-bold">
+        <label className="mt-4 block text-[13px] font-semibold text-neutral-700 dark:text-neutral-300">
           Observaciones generales
           <textarea
-            className="mt-2 min-h-20 w-full resize-none rounded-2xl border border-[var(--line)] bg-white p-3 text-base font-normal outline-none transition focus:border-[var(--green)] dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+            className="mt-2 min-h-20 w-full resize-none rounded-2xl bg-black/[0.04] p-3.5 text-base font-normal text-[var(--ink)] outline-none ring-1 ring-transparent transition focus:bg-[var(--paper)] focus:ring-black/15 dark:bg-white/[0.07] dark:text-neutral-100 dark:focus:bg-neutral-800 dark:focus:ring-white/20"
             maxLength={250}
             placeholder="Algo que debamos saber…"
             value={notes}
@@ -2048,14 +2065,14 @@ function CartDrawer({
           />
         </label>
       </div>
-      <div className="border-t border-[var(--line)] px-4 pt-3.5 pb-[max(1.25rem,env(safe-area-inset-bottom))] dark:border-neutral-800 sm:p-4 sm:pb-6">
-        <div className="mb-3.5 flex items-center justify-between text-base sm:mb-4 sm:text-lg">
-          <span className="text-[var(--muted-foreground)]">Total estimado</span>
-          <strong className="text-xl">{money(subtotal)}</strong>
+      <div className="border-t border-black/[0.06] bg-[var(--paper)]/95 px-4 pt-3.5 pb-[max(1.25rem,env(safe-area-inset-bottom))] backdrop-blur-xl dark:border-white/[0.08] dark:bg-neutral-900/95 sm:p-4 sm:pb-6">
+        <div className="mb-3.5 flex items-center justify-between text-base sm:mb-4">
+          <span className="text-sm font-medium text-neutral-500 dark:text-neutral-400">Total estimado</span>
+          <strong className="text-xl font-bold tabular-nums text-[var(--ink)]">{money(subtotal)}</strong>
         </div>
         <button
           type="button"
-          className="focus-ring flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-neutral-900 py-4 font-semibold text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+          className="focus-ring flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 py-3.5 text-[15px] font-semibold text-white shadow-sm transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-950"
           disabled={sending || cart.length === 0}
           onClick={onSubmit}
         >
@@ -2063,7 +2080,7 @@ function CartDrawer({
             "Enviando…"
           ) : (
             <>
-              <ShoppingBag size={20} />
+              <ShoppingBag size={18} />
               Enviar pedido
             </>
           )}
@@ -2094,144 +2111,197 @@ function OrderTracking({
       ? "accepted"
       : order.status
   );
+  const isReady = order.status === "ready";
+  const isCancelled = order.status === "cancelled";
   const trackingTitle =
-    order.status === "accepted" || order.status === "preparing"
-      ? "Tu pedido ya está en cocina"
-      : order.status === "ready"
-        ? "Tu pedido está listo para servir"
-        : order.status === "delivered"
-          ? "Tu pedido fue entregado"
-          : "Este pedido fue cancelado";
+    order.status === "accepted" || order.status === "sent"
+      ? "Pedido confirmado"
+      : order.status === "preparing"
+        ? "Preparando tus platillos"
+        : isReady
+          ? tableCode === "LLEVAR"
+            ? "¡Listo para recoger!"
+            : "¡Listo para servir!"
+          : order.status === "delivered"
+            ? "Pedido entregado"
+            : "Pedido cancelado";
+
   return (
-    <main className="mx-auto min-h-screen max-w-xl px-5 py-6">
-      <Brand />
-      <section className="paper mt-8 overflow-hidden rounded-[2rem]">
-        <div className="bg-[var(--green)] px-6 py-8 text-white">
-          <div className="grid h-14 w-14 place-items-center rounded-full bg-[#d9b65d] text-[var(--green)]">
-            <Check size={30} strokeWidth={3} />
-          </div>
-          <p className="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-[#e5cd90]">
-            Pedido enviado
-          </p>
-          <h1 className="mt-1 font-display text-4xl font-bold">{trackingTitle}</h1>
-          <div className="mt-5 flex items-center gap-4">
+    <main className="mx-auto min-h-dvh max-w-xl bg-[var(--cream)] px-4 py-5 text-[var(--ink)] sm:px-6 sm:py-8">
+      <div className="flex items-center justify-between">
+        <Brand compact />
+        <ThemeToggle />
+      </div>
+
+      {/* ── Apple Live Activity Status Card ── */}
+      <section className="mt-5 overflow-hidden rounded-[2rem] bg-[var(--paper)] shadow-[0_8px_30px_rgba(0,0,0,0.06)] ring-1 ring-black/[0.06] dark:bg-neutral-900 dark:ring-white/10">
+        <div className="p-5 sm:p-6">
+          <div className="flex items-center justify-between gap-3">
             <StatusPill status={order.status} />
-            <span className="text-sm">Folio {order.folio}</span>
+            <span className="text-xs font-semibold tabular-nums text-neutral-500 dark:text-neutral-400">
+              Folio {order.folio}
+            </span>
           </div>
-          {tableCode === "LLEVAR" && (customerName || order.customerName) && (
-            <p className="mt-4 font-display text-2xl font-bold text-[#ffd166]">
-              👤 {customerName || order.customerName}
-              {customerPhone ? ` · 📞 ${customerPhone}` : ""}
-            </p>
-          )}
-          {tableCode === "LLEVAR" && (
-            <div className="mt-4 rounded-xl bg-white/10 p-3 backdrop-blur">
-              <p className="text-xs text-white/70">
-                📱 Guarda esta página o compártela para seguir tu pedido.
-              </p>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  className="focus-ring rounded-lg bg-white/20 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/30"
-                  onClick={() => {
-                    const url = `${window.location.origin}/seguimiento/${order.folio}`;
-                    void navigator.clipboard.writeText(url);
-                    toastSuccess("Link copiado", "Pégalo en WhatsApp o donde quieras.");
-                  }}
-                >
-                  📋 Copiar link
-                </button>
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent(`🍽️ Mi pedido en Imperio · ${order.folio}\n${typeof window !== "undefined" ? window.location.origin : ""}/seguimiento/${order.folio}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="focus-ring rounded-lg bg-[#25D366] px-3 py-1.5 text-xs font-bold text-white hover:opacity-90"
-                >
-                  📱 WhatsApp
-                </a>
+
+          <h1 className="mt-4 font-display text-[1.7rem] font-semibold leading-[1.1] tracking-[-0.03em] sm:text-3xl">
+            {trackingTitle}
+          </h1>
+          <p className="mt-1.5 text-sm text-neutral-500 dark:text-neutral-400">
+            {isCancelled
+              ? "Solicita apoyo al personal si tienes alguna duda."
+              : "Esta pantalla se actualiza en vivo automáticamente."}
+          </p>
+
+          {/* Horizontal Apple Live Activity Progress Bar */}
+          {!isCancelled && (
+            <div className="mt-5">
+              <div className="grid grid-cols-4 gap-1.5" aria-hidden="true">
+                {steps.map((step, index) => (
+                  <div
+                    key={step}
+                    className={`h-1.5 rounded-full transition-all duration-500 ${
+                      index <= current
+                        ? isReady
+                          ? "bg-emerald-500"
+                          : "bg-neutral-950 dark:bg-white"
+                        : "bg-black/[0.08] dark:bg-white/[0.12]"
+                    }`}
+                  />
+                ))}
               </div>
-            </div>
-          )}
-        </div>
-        <div className="p-6">
-          <div className="flex items-center justify-between rounded-2xl bg-[#eee8dc] p-4">
-            <span>
-              <span className="block text-xs uppercase text-[var(--muted-foreground)]">
-                {tableCode === "LLEVAR" ? "Para llevar" : "Mesa"}
-              </span>
-              <strong className="text-2xl">{tableCode === "LLEVAR" ? "🥡" : tableCode}</strong>
-            </span>
-            <span className="text-right">
-              <span className="block text-xs uppercase text-[var(--muted-foreground)]">Total</span>
-              <strong className="text-xl">{money(order.total)}</strong>
-            </span>
-          </div>
-          {order.status === "cancelled" ? (
-            <div className="mt-6 rounded-2xl bg-[#f1d0ca] p-4 text-[#7a2c22]">
-              Este pedido fue cancelado. Solicita ayuda al personal.
-            </div>
-          ) : (
-            <ol className="mt-7 space-y-0">
-              {steps.map((step, index) => (
-                <li className={`flex gap-4 ${index === current ? "step-active" : ""}`} key={step}>
-                  <div className="flex flex-col items-center">
-                    <span
-                      className={`step-circle grid h-8 w-8 place-items-center rounded-full ${
-                        index <= current
-                          ? "bg-[var(--green)] text-white"
-                          : "border-2 border-[var(--line)] bg-white"
+              <ol className="mt-4 space-y-2.5">
+                {steps.map((step, index) => {
+                  const done = index < current;
+                  const active = index === current;
+                  return (
+                    <li
+                      key={step}
+                      className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition ${
+                        active
+                          ? "bg-black/[0.04] font-semibold text-[var(--ink)] dark:bg-white/[0.08]"
+                          : done
+                            ? "text-neutral-600 dark:text-neutral-300"
+                            : "text-neutral-400 dark:text-neutral-500"
                       }`}
                     >
-                      {index < current ? <Check size={16} /> : index + 1}
-                    </span>
-                    {index < steps.length - 1 && (
                       <span
-                        className={`h-9 w-0.5 ${
-                          index < current ? "bg-[var(--green)]" : "bg-[var(--line)]"
+                        className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${
+                          done || active
+                            ? isReady && active
+                              ? "bg-emerald-500 text-white"
+                              : "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950"
+                            : "bg-black/[0.06] text-neutral-400 dark:bg-white/[0.08]"
                         }`}
-                      />
-                    )}
-                  </div>
-                  <div className="pt-1">
-                    <strong className="capitalize">
-                      {
-{
-                           accepted: "Confirmado y enviado a cocina",
-                          preparing: "Preparando",
-                          ready: "Listo para servir",
-                          delivered: "Entregado"
-                        }[step]
-                      }
-                    </strong>
-                    {index === current && (
-                      <p className="text-xs text-[var(--muted-foreground)]">Estado actual</p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-          <div className="mt-7 flex items-center gap-2 rounded-xl bg-[#f4dfb4]/60 p-3 text-sm">
-            <Clock3 size={18} />
-            El estado se actualiza automáticamente.
-          </div>
-          {session && session.status === "active" && (
-            <div className="mt-4 rounded-2xl bg-[#eee8dc] p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs uppercase text-[var(--muted-foreground)]">Mesa en sesión</span>
-                <span className="text-xs font-bold text-[var(--brown)]">#{session.id?.slice(0, 8)}</span>
-              </div>
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Puedes seguir ordenando y acumularemos todo en una sola cuenta.
-              </p>
+                      >
+                        {done ? <Check size={13} strokeWidth={3} /> : index + 1}
+                      </span>
+                      <span className="flex-1">
+                        {
+                          {
+                            accepted: "Recibido en cocina",
+                            preparing: "En preparación",
+                            ready: tableCode === "LLEVAR" ? "Listo en mostrador" : "Listo para servir",
+                            delivered: "Entregado"
+                          }[step]
+                        }
+                      </span>
+                      {active && (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <span className="h-1.5 w-1.5 rounded-full bg-current pulse-dot" />
+                          Ahora
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
           )}
+
+          {/* Meta summary card */}
+          <div className="mt-5 flex items-center justify-between rounded-2xl bg-black/[0.035] px-4 py-3.5 dark:bg-white/[0.05]">
+            <div>
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                {tableCode === "LLEVAR" ? "Modalidad" : "Mesa"}
+              </span>
+              <strong className="text-lg font-semibold">
+                {tableCode === "LLEVAR"
+                  ? customerName || order.customerName || "Para llevar"
+                  : `Mesa ${tableCode}`}
+              </strong>
+              {tableCode === "LLEVAR" && customerPhone && (
+                <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                  {customerPhone}
+                </span>
+              )}
+            </div>
+            <div className="text-right">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                Total
+              </span>
+              <strong className="text-xl font-bold tabular-nums">{money(order.total)}</strong>
+            </div>
+          </div>
+
+          {/* Order items breakdown if available */}
+          {order.items && order.items.length > 0 && (
+            <div className="mt-4 rounded-2xl bg-black/[0.025] p-3.5 dark:bg-white/[0.04]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                Tu orden
+              </p>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {order.items.map((item, idx) => (
+                  <li key={`${item.productId}-${idx}`} className="flex items-baseline justify-between gap-2">
+                    <span className="truncate">
+                      <strong className="font-semibold tabular-nums">{item.quantity}×</strong> {item.name}
+                    </span>
+                    <span className="shrink-0 text-xs font-medium tabular-nums text-neutral-500 dark:text-neutral-400">
+                      {money(cartItemTotal(item))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Share tracking pills for takeaway */}
+          {tableCode === "LLEVAR" && (
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="focus-ring flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-black/[0.06] px-4 text-xs font-semibold text-[var(--ink)] transition active:scale-95 dark:bg-white/[0.1] dark:text-white"
+                onClick={() => {
+                  const url = `${window.location.origin}/seguimiento/${order.folio}`;
+                  void navigator.clipboard.writeText(url);
+                  toastSuccess("Link copiado", "Pégalo en WhatsApp o donde quieras.");
+                }}
+              >
+                Copiar link
+              </button>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(`🍽️ Mi pedido en Imperio · ${order.folio}\n${typeof window !== "undefined" ? window.location.origin : ""}/seguimiento/${order.folio}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="focus-ring flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-[#25D366] px-4 text-xs font-semibold text-white transition active:scale-95"
+              >
+                WhatsApp
+              </a>
+            </div>
+          )}
+
+          {session && session.status === "active" && (
+            <p className="mt-4 text-center text-xs text-neutral-500 dark:text-neutral-400">
+              Sesión #{session.id?.slice(0, 8)} · Puedes pedir algo más y se suma a tu cuenta.
+            </p>
+          )}
+
           <button
-            className="focus-ring mt-4 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--terracotta)] px-5 font-bold text-white"
+            type="button"
+            className="focus-ring mt-5 flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 text-[15px] font-semibold text-white shadow-sm transition active:scale-[0.98] dark:bg-white dark:text-neutral-950"
             onClick={onOrderAgain}
           >
-            <Plus size={20} />
-            {order.status === "cancelled"
+            <Plus size={18} />
+            {isCancelled
               ? "Volver al menú"
               : order.status === "delivered"
                 ? "Pedir algo más"
@@ -2263,23 +2333,21 @@ function LunchMenu({
 }) {
   if (loading) {
     return (
-      <section className="paper mt-5 overflow-hidden rounded-[2rem] sm:mt-6">
-        <div className="bg-[var(--brown)]/10 px-5 py-6 sm:px-6 sm:py-7">
-          <div className="skeleton mb-4 h-6 w-36 max-w-full" />
-          <div className="skeleton mb-2 h-10 w-full max-w-xs" />
-          <div className="skeleton h-5 w-44 max-w-full" />
-        </div>
-        <div className="space-y-4 p-5 sm:p-6">
+      <section className="mt-4 overflow-hidden rounded-[1.75rem] bg-[var(--paper)] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.05] dark:bg-neutral-900 dark:ring-white/10 sm:mt-5 sm:p-6">
+        <div className="skeleton mb-3 h-5 w-32 max-w-full rounded-full" />
+        <div className="skeleton mb-2 h-8 w-full max-w-xs rounded-xl" />
+        <div className="skeleton h-4 w-40 max-w-full rounded-lg" />
+        <div className="mt-6 space-y-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="space-y-3 border-b border-[var(--line)] py-4 last:border-0">
-              <div className="skeleton h-6 w-32" />
+            <div key={i} className="space-y-2.5 pt-3">
+              <div className="skeleton h-5 w-28 rounded-lg" />
               <div className="grid gap-2 sm:grid-cols-2">
-                <div className="skeleton h-12 rounded-xl" />
-                <div className="skeleton h-12 rounded-xl" />
+                <div className="skeleton h-12 rounded-2xl" />
+                <div className="skeleton h-12 rounded-2xl" />
               </div>
             </div>
           ))}
-          <div className="skeleton mt-4 h-14 w-full rounded-xl" />
+          <div className="skeleton mt-4 h-13 w-full rounded-full" />
         </div>
       </section>
     );
@@ -2287,20 +2355,22 @@ function LunchMenu({
 
   if (!menu || !menu.availableToday) {
     return (
-      <section className="animate-fade-in paper mt-5 rounded-[2rem] p-6 text-center sm:mt-6 sm:p-7">
-        <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#f4dfb4]/60">
-          <Clock3 className="text-[var(--terracotta)]" size={30} />
+      <section className="animate-fade-in mt-4 rounded-[1.75rem] bg-[var(--paper)] p-7 text-center shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.05] dark:bg-neutral-900 dark:ring-white/10 sm:mt-5">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-black/[0.05] dark:bg-white/[0.08]">
+          <Clock3 className="text-neutral-500 dark:text-neutral-300" size={24} />
         </div>
-        <h2 className="mt-5 font-display text-2xl font-bold sm:text-3xl">Hoy no hay comida corrida</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">
-          Puedes ordenar cualquiera de los productos del menú fijo.
+        <h2 className="mt-4 font-display text-xl font-semibold sm:text-2xl">
+          Hoy no hay comida corrida
+        </h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
+          Puedes ordenar cualquiera de los platillos de paquetes y carta.
         </p>
         <button
           type="button"
-          className="focus-ring btn-press mt-5 rounded-2xl bg-[var(--green)] px-6 py-3 font-bold text-white shadow-md transition hover:opacity-90"
+          className="focus-ring mt-5 rounded-full bg-neutral-950 px-6 py-2.5 text-sm font-semibold text-white transition active:scale-95 dark:bg-white dark:text-neutral-950"
           onClick={onShowFixed}
         >
-          Ver menú fijo
+          Ver paquetes y carta
         </button>
       </section>
     );
@@ -2343,6 +2413,8 @@ function ConfiguredLunchMenu({
     )
   );
   const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
+  const completedCount = courses.filter(([, options]) => options.length === 0).length +
+    courses.filter(([course, options]) => options.length > 0 && Boolean(selections[course])).length;
   const hasCompleteSelection = courses.every(
     ([course, options]) => options.length > 0 && Boolean(selections[course])
   );
@@ -2356,87 +2428,139 @@ function ConfiguredLunchMenu({
   const finalUnitPrice = menu.price + extraTotal;
 
   return (
-    <section className="mt-5 sm:mt-6">
-      <div className="paper overflow-hidden rounded-[2rem]">
-        <div className="bg-[var(--brown)] px-5 py-6 text-white sm:px-6 sm:py-7">
-          <span className="inline-block rounded-full bg-white/20 px-3 py-1 text-xs font-bold">
-            {isOpen ? "Disponible ahora" : "Disponible hoy de 1:00 a 5:00 p.m."}
-          </span>
-          <h2 className="mt-3.5 font-display text-3xl font-bold sm:mt-4 sm:text-4xl">Comida corrida del día</h2>
-          <p className="mt-2 flex items-center gap-2 text-sm">
-            <Clock3 size={16} /> {menu.availableFrom}–{menu.availableUntil}
-          </p>
-          <p className="mt-4 text-3xl font-bold sm:mt-5">{money(menu.price)}</p>
-        </div>
-        <div className="p-4 sm:p-6">
-          <div className="mb-5 flex items-start gap-3 rounded-2xl bg-[#f4dfb4]/60 p-3.5 text-sm sm:p-4">
-            <Sparkles className="shrink-0 text-[var(--brown)]" size={20} />
-            Elige una opción de cada tiempo. Cocina y el mesero recibirán tus elecciones.
+    <section className="mt-4 sm:mt-5">
+      <div className="overflow-hidden rounded-[1.75rem] bg-[var(--paper)] shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.055] dark:bg-neutral-900 dark:ring-white/[0.08]">
+        {/* Clean Apple/Pixel Editorial Header */}
+        <div className="border-b border-black/[0.06] p-5 dark:border-white/[0.08] sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                isOpen
+                  ? "bg-emerald-500/12 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                  : "bg-black/[0.06] text-neutral-600 dark:bg-white/10 dark:text-neutral-300"
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  isOpen ? "bg-emerald-500" : "bg-neutral-400"
+                }`}
+              />
+              {isOpen ? "Disponible ahora" : `Horario ${menu.availableFrom}–${menu.availableUntil}`}
+            </span>
+            <span className="text-xs font-medium tabular-nums text-neutral-500 dark:text-neutral-400">
+              {completedCount} de {courses.length} tiempos listos
+            </span>
           </div>
-          {courses.map(([course, options]) => (
-            <fieldset className="border-b border-[var(--line)] py-4 last:border-0" key={course}>
-              <legend className="font-display text-xl font-bold">
-                {course}
-                <span className="ml-2 font-sans text-xs font-bold text-[var(--muted-foreground)]">
-                  Elige 1 de {options.length}
-                </span>
-              </legend>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {options.map((option) => (
-                  <label
-                    className={`flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3 transition ${
-                      selections[course] === option
-                        ? "border-[var(--green)] bg-[#e7efe9] shadow-sm"
-                        : "border-[var(--line)] hover:bg-[var(--cream)]"
-                    }`}
-                    key={option}
-                  >
-                    <span className="min-w-0">{option}</span>
-                    <input
-                      checked={selections[course] === option}
-                      name={`daily-${course}`}
-                      type="radio"
-                      value={option}
-                      onChange={() =>
-                        setSelections((current) => ({ ...current, [course]: option }))
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          ))}
+
+          <div className="mt-3.5 flex items-baseline justify-between gap-3">
+            <div>
+              <h2 className="font-display text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">
+                Comida corrida
+              </h2>
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                <Sparkles size={14} /> Elige 1 opción por cada tiempo
+              </p>
+            </div>
+            <strong className="font-display text-2xl font-bold tabular-nums sm:text-3xl">
+              {money(menu.price)}
+            </strong>
+          </div>
+        </div>
+
+        <div className="p-4 sm:p-6">
+          <div className="divide-y divide-black/[0.06] dark:divide-white/[0.08]">
+            {courses.map(([course, options], courseIdx) => (
+              <fieldset className="py-4 first:pt-1 last:pb-1" key={course}>
+                <legend className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.015em]">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-neutral-950 text-[11px] font-bold text-white dark:bg-white dark:text-neutral-950">
+                    {courseIdx + 1}
+                  </span>
+                  <span>{course}</span>
+                  <span className="text-xs font-normal text-neutral-500 dark:text-neutral-400">
+                    · {options.length} {options.length === 1 ? "opción" : "opciones"}
+                  </span>
+                </legend>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {options.map((option) => {
+                    const selected = selections[course] === option;
+                    return (
+                      <label
+                        className={`flex cursor-pointer items-center justify-between gap-2.5 rounded-2xl p-3.5 text-sm font-medium transition active:scale-[0.99] ${
+                          selected
+                            ? "bg-neutral-950 font-semibold text-white shadow-xs dark:bg-white dark:text-neutral-950"
+                            : "bg-black/[0.04] text-[var(--ink)] hover:bg-black/[0.07] dark:bg-white/[0.06] dark:text-neutral-100 dark:hover:bg-white/[0.1]"
+                        }`}
+                        key={option}
+                      >
+                        <span className="min-w-0">{option}</span>
+                        <span
+                          className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
+                            selected
+                              ? "border-transparent bg-white text-neutral-950 dark:bg-neutral-950 dark:text-white"
+                              : "border-black/20 dark:border-white/25"
+                          }`}
+                        >
+                          {selected && <Check size={12} strokeWidth={3} />}
+                        </span>
+                        <input
+                          checked={selected}
+                          name={`daily-${course}`}
+                          type="radio"
+                          value={option}
+                          className="sr-only"
+                          onChange={() =>
+                            setSelections((current) => ({ ...current, [course]: option }))
+                          }
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ))}
+          </div>
+
           {extras.length > 0 && (
-            <fieldset className="mt-5 rounded-2xl border border-[var(--line)] bg-[#fbf7f1] p-4">
-              <legend className="font-display text-xl font-bold">Extras con costo</legend>
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Puedes sumar extras y el precio se actualizará al momento.
+            <fieldset className="mt-5 rounded-2xl bg-black/[0.03] p-3.5 dark:bg-white/[0.05] sm:p-4">
+              <legend className="font-display text-base font-semibold tracking-[-0.02em]">
+                Extras con costo
+              </legend>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                El precio se actualiza al momento.
               </p>
               <div className="mt-3 grid gap-2">
                 {extras.map((extra) => {
                   const selected = selectedExtras.includes(extra.name);
                   return (
                     <label
-                      className={`flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3 transition ${
+                      className={`flex cursor-pointer items-center justify-between gap-2 rounded-2xl p-3 transition active:scale-[0.99] ${
                         selected
-                          ? "border-[var(--brown)] bg-[#f4e6d8] shadow-sm"
-                          : "border-[var(--line)] bg-white hover:bg-[var(--cream)]"
+                          ? "bg-neutral-950 text-white shadow-xs dark:bg-white dark:text-neutral-950"
+                          : "bg-[var(--paper)] text-[var(--ink)] ring-1 ring-black/[0.05] dark:bg-neutral-900 dark:text-neutral-100 dark:ring-white/[0.08]"
                       }`}
                       key={extra.name}
                     >
-                      <span className="flex min-w-0 items-center gap-2">
+                      <span className="flex min-w-0 items-center gap-2.5">
                         <span
-                          className={`grid h-5 w-5 shrink-0 place-items-center rounded border-2 ${
+                          className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
                             selected
-                              ? "border-[var(--brown)] bg-[var(--brown)] text-white"
-                              : "border-[var(--line)]"
+                              ? "border-transparent bg-white text-neutral-950 dark:bg-neutral-950 dark:text-white"
+                              : "border-black/20 dark:border-white/25"
                           }`}
                         >
                           {selected && <Check size={12} strokeWidth={3} />}
                         </span>
-                        <span className="truncate font-medium">{extra.name}</span>
+                        <span className="truncate text-sm font-medium">{extra.name}</span>
                       </span>
-                      <strong className="shrink-0 text-sm text-[var(--brown)]">+{money(extra.price)}</strong>
+                      <strong
+                        className={`shrink-0 text-sm font-semibold tabular-nums ${
+                          selected
+                            ? "text-white/90 dark:text-neutral-900"
+                            : "text-neutral-600 dark:text-neutral-300"
+                        }`}
+                      >
+                        +{money(extra.price)}
+                      </strong>
                       <input
                         checked={selected}
                         type="checkbox"
@@ -2453,48 +2577,47 @@ function ConfiguredLunchMenu({
                   );
                 })}
               </div>
-              {extraTotal > 0 && (
-                <div className="mt-3 flex items-center justify-between rounded-xl bg-[#f4e6d8] px-4 py-2.5 text-sm">
-                  <span className="font-bold text-[var(--brown)]">Total de extras</span>
-                  <strong className="text-[var(--brown)]">+{money(extraTotal)}</strong>
-                </div>
-              )}
             </fieldset>
           )}
-          <div className="mt-6 grid gap-3 sm:grid-cols-[auto_1fr]">
-            <div className="flex items-center justify-center rounded-xl border border-[var(--line)]">
+
+          <div className="mt-5 flex items-center gap-2.5 sm:gap-3">
+            <div className="flex shrink-0 items-center rounded-full bg-black/[0.05] p-1 dark:bg-white/[0.09]">
               <button
                 type="button"
-                className="focus-ring grid h-14 w-12 place-items-center"
+                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:scale-90 sm:h-11 sm:w-11"
                 aria-label="Restar comida corrida"
                 onClick={() => setQuantity((value) => Math.max(1, value - 1))}
               >
-                <Minus size={18} />
+                <Minus size={17} />
               </button>
-              <strong className="w-10 text-center">{quantity}</strong>
+              <strong className="w-7 text-center text-sm font-semibold tabular-nums sm:w-9 sm:text-base">
+                {quantity}
+              </strong>
               <button
                 type="button"
-                className="focus-ring grid h-14 w-12 place-items-center text-[var(--brown)]"
+                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:scale-90 sm:h-11 sm:w-11"
                 aria-label="Sumar comida corrida"
                 onClick={() => setQuantity((value) => Math.min(10, value + 1))}
               >
-                <Plus size={18} />
+                <Plus size={17} />
               </button>
             </div>
             <button
               type="button"
-              className="focus-ring flex min-h-14 flex-wrap items-center justify-between gap-2 rounded-xl bg-[var(--brown)] px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-[var(--brown-dark)] disabled:cursor-not-allowed disabled:opacity-45 sm:flex-nowrap sm:px-5 sm:text-base"
+              className="focus-ring flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-950 sm:min-h-13 sm:py-3.5 sm:text-[15px]"
               disabled={!isOpen || !hasCompleteSelection}
               onClick={() => onAdd(menu, selections, quantity, chosenExtras)}
             >
-              <span className="min-w-0">
+              <span className="truncate">
                 {!isOpen
-                  ? "Comida corrida · L–V 9:00 a.m.–6:00 p.m. · Sáb 9:00 a.m.–3:00 p.m. · Dom cerrado"
+                  ? "Fuera de horario"
                   : hasCompleteSelection
-                    ? "Agregar al pedido"
-                    : "Elige una opción de cada tiempo"}
+                    ? "Agregar corrida"
+                    : "Completa tus tiempos"}
               </span>
-              <span className="shrink-0">{money(finalUnitPrice * quantity)}</span>
+              <span className="shrink-0 font-bold tabular-nums">
+                · {money(finalUnitPrice * quantity)}
+              </span>
             </button>
           </div>
         </div>

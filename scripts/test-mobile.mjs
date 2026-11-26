@@ -198,7 +198,19 @@ async function run() {
         await page.reload({ waitUntil: "load" });
         await page.locator("button", { hasText: /Ver mi pedido|Agregar al grupo/ }).first().waitFor({ timeout: 10000 });
 
-        // 5. Abrir hoja de Mesero / Cuenta y verificar sin desbordamiento
+        // 5. Cambiar a Comida corrida y abrir Carrito sin zoom ni desbordamiento
+        const corridaTab = page.locator("button", { hasText: "Comida corrida" }).first();
+        if (vp.isMobile) await corridaTab.tap();
+        else await corridaTab.click();
+        await page.waitForTimeout(300);
+        const corridaCheck = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          vvScale: window.visualViewport?.scale || 1
+        }));
+        assert.equal(corridaCheck.scrollWidth, vp.width, `${vp.name}: Comida corrida desbordó horizontalmente`);
+        assert.equal(corridaCheck.vvScale, 1, `${vp.name}: Comida corrida alteró la escala`);
+
+        // 6. Abrir hoja de Mesero / Cuenta y verificar sin desbordamiento
         const serviceBtn = page.locator("button[aria-label='Mesero y cuenta']");
         if (vp.isMobile) await serviceBtn.tap();
         else await serviceBtn.click();
@@ -212,7 +224,7 @@ async function run() {
         assert.ok(serviceCheck.hasAccountSummary, `${vp.name}: falta resumen Consumo de tu mesa`);
         assert.equal(serviceCheck.scrollWidth, vp.width, `${vp.name}: hoja Mesero/Cuenta desbordó horizontalmente`);
 
-        console.log(`✓ ${vp.name} (${vp.width}×${vp.height}): sin zoom, sin overflow, búsqueda global, carrito persistente y hoja de cuenta OK`);
+        console.log(`✓ ${vp.name} (${vp.width}×${vp.height}): sin zoom, sin overflow, búsqueda global, comida corrida, carrito persistente y hoja de cuenta OK`);
         await context.close();
       }
 

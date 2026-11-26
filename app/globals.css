@@ -120,6 +120,7 @@ html {
   color: var(--ink);
   scroll-behavior: smooth;
   overflow-x: clip;
+  overscroll-behavior-x: none;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
@@ -128,6 +129,7 @@ body {
   margin: 0;
   min-height: 100vh;
   overflow-x: clip;
+  overscroll-behavior-x: none;
   background: var(--cream);
   color: var(--ink);
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", system-ui, sans-serif;
