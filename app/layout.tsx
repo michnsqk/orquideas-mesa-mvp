@@ -4,7 +4,11 @@ import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ToastViewport } from "@/components/ui/toast";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap"
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
@@ -23,7 +27,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Imperio · Cocina de barrio",
     description: "Desayunos de 9 a 5 y comida corrida de 1 a 5.",
-    images: [{ url: "/og.png", width: 1728, height: 910, alt: "Menú de Imperio" }]
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Menú de Imperio" }]
   },
   twitter: {
     card: "summary_large_image",
@@ -38,7 +42,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
-  themeColor: "#5c3d2e",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f6f5f2" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0b0c" }
+  ],
   viewportFit: "cover"
 };
 

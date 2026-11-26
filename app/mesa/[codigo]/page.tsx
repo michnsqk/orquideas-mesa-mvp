@@ -2,6 +2,10 @@ import { notFound } from "next/navigation";
 import { activeTables } from "@/lib/menu";
 import { MenuClient } from "@/components/menu-client";
 
+export function generateStaticParams() {
+  return activeTables.map((codigo) => ({ codigo }));
+}
+
 export default async function TablePage({
   params
 }: {

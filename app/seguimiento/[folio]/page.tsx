@@ -7,7 +7,6 @@ import { Brand } from "@/components/brand";
 import { StatusPill } from "@/components/status-pill";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { money } from "@/lib/menu";
-import { connectOrderChannel } from "@/lib/order-store";
 import type { Order } from "@/lib/types";
 import { ArrowLeft, Check, Copy, Share2 } from "lucide-react";
 
@@ -18,7 +17,7 @@ export default function TrackingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const channelRef = useRef<ReturnType<typeof connectOrderChannel> | null>(null);
+  const channelRef = useRef<{ close: () => void } | null>(null);
   const prevStatusRef = useRef<string | null>(null);
   const orderId = order?.id ?? null;
 
@@ -52,21 +51,47 @@ export default function TrackingPage() {
         setLoading(false);
       }
     };
-    load();
+    void load();
 
-    // Poll every 8 seconds
-    const timer = setInterval(load, 8000);
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 8000);
     return () => clearInterval(timer);
   }, [folio]);
 
   useEffect(() => {
     if (!orderId) return;
-    channelRef.current = connectOrderChannel(({ order: incoming }) => {
-      if (incoming && incoming.id === orderId) {
-        setOrder(incoming);
-      }
-    });
-    return () => channelRef.current?.close();
+    let disposed = false;
+    const connect = () => {
+      if (disposed || channelRef.current) return;
+      void import("@/lib/order-store")
+        .then(({ connectOrderChannel }) => {
+          if (disposed || channelRef.current) return;
+          channelRef.current = connectOrderChannel(({ order: incoming }) => {
+            if (incoming && incoming.id === orderId) {
+              setOrder(incoming);
+            }
+          });
+        })
+        .catch(() => undefined);
+    };
+    connect();
+    const onPageHide = () => {
+      channelRef.current?.close();
+      channelRef.current = null;
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) connect();
+    };
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      disposed = true;
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+      channelRef.current?.close();
+      channelRef.current = null;
+    };
   }, [orderId]);
 
   useEffect(() => {

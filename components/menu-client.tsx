@@ -33,7 +33,7 @@ import {
   products as seedProducts,
   timeToMinutes
 } from "@/lib/menu";
-import { connectOrderChannel, readDemoOrders } from "@/lib/order-store";
+import type { AppChannelPayload } from "@/lib/order-store";
 import { calculateCartTotal, cartItemTotal } from "@/lib/order-utils";
 import type { CartItem, DailyMenuConfig, Order, Product, Promotion, TableSession } from "@/lib/types";
 
@@ -46,9 +46,27 @@ type ConfirmAction = {
   tone?: "default" | "danger";
   onConfirm: () => void;
 };
+type ChannelHandle = {
+  send: (payload: AppChannelPayload) => unknown;
+  close: () => void;
+};
 
 const LAST_ORDER_STORAGE_KEY = "imperio-last-order-v1";
 const cartStorageKey = (tableCode: string) => `imperio-cart-v1:${tableCode}`;
+
+function scheduleWhenIdle(task: () => void, timeout = 1200): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  const win = window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    cancelIdleCallback?: (id: number) => void;
+  };
+  if (typeof win.requestIdleCallback === "function") {
+    const id = win.requestIdleCallback(task, { timeout });
+    return () => win.cancelIdleCallback?.(id);
+  }
+  const timer = window.setTimeout(task, Math.min(timeout, 450));
+  return () => window.clearTimeout(timer);
+}
 
 /** Íconos opcionales de categoría (solo capa visual; si no existe, la píldora va sin ícono). */
 const CATEGORY_ICONS: Record<string, string> = {
@@ -108,13 +126,14 @@ export function MenuClient({
   const [waiterNotice, setWaiterNotice] = useState<string | null>(null);
   const waiterToastTimerRef = useRef<number | null>(null);
   const cartHydratedRef = useRef(false);
+  const hasMountedCategoryRef = useRef(false);
   const [session, setSession] = useState<TableSession | null>(null);
   const [sessionExisted, setSessionExisted] = useState(false);
   const [sendTogether, setSendTogether] = useState(false);
   const [pendingOrders, setPendingOrders] = useState<CartItem[][]>([]);
   const [drinkFlavors, setDrinkFlavors] = useState<Array<{drinkType: string; name: string; priceModifier: number}>>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
-  const channelRef = useRef<ReturnType<typeof connectOrderChannel> | null>(null);
+  const channelRef = useRef<ChannelHandle | null>(null);
   const latestOrderRef = useRef<Order | null>(null);
   const dismissedOrderRef = useRef<string | null>(null);
 
@@ -141,46 +160,59 @@ export function MenuClient({
   }, []);
 
   const loadDailyMenu = useCallback(async () => {
-    const response = await fetch("/api/daily-menu", { cache: "no-store" });
-    if (!response.ok) return null;
-    const menu = (await response.json()) as DailyMenuConfig | null;
-    setDailyMenu(menu);
-    return menu;
+    try {
+      const response = await fetch("/api/daily-menu", { cache: "no-store" });
+      if (!response.ok) return null;
+      const menu = (await response.json()) as DailyMenuConfig | null;
+      setDailyMenu(menu);
+      return menu;
+    } catch {
+      return null;
+    } finally {
+      setDailyMenuLoading(false);
+    }
   }, []);
 
   const loadCatalog = useCallback(async () => {
-    const response = await fetch("/api/products", { cache: "no-store" });
-    if (!response.ok) return;
-    const raw = (await response.json()) as Array<Record<string, unknown>>;
-    if (!raw.length) return;
-    const next = raw.map(normalizeProduct);
-    if (next.length) setCatalog(next);
+    try {
+      const response = await fetch("/api/products", { cache: "no-store" });
+      if (!response.ok) return;
+      const raw = (await response.json()) as Array<Record<string, unknown>>;
+      if (!Array.isArray(raw) || !raw.length) return;
+      const next = raw.map(normalizeProduct);
+      if (next.length) setCatalog(next);
+    } catch {
+      // keep seed catalog silently
+    }
   }, []);
 
   const loadPromotions = useCallback(async () => {
-    const response = await fetch("/api/promotions", { cache: "no-store" });
-    if (!response.ok) return;
-    const rows = (await response.json()) as Promotion[];
-    if (Array.isArray(rows)) setPromotions(rows);
+    try {
+      const response = await fetch("/api/promotions", { cache: "no-store" });
+      if (!response.ok) return;
+      const rows = (await response.json()) as Promotion[];
+      if (Array.isArray(rows) && rows.length > 0) setPromotions(rows);
+    } catch {
+      // ignore offline/aborted fetch
+    }
   }, []);
 
   const loadSession = useCallback(async () => {
     if (!tableCode) return;
-    // Para llevar: no hay mesa física ni sesión; no crear sesiones falsas.
     if (tableCode === "LLEVAR") {
       setSession(null);
       setSessionExisted(false);
       return;
     }
-    const response = await fetch(`/api/sessions?tableCode=${encodeURIComponent(tableCode)}`, {
-      cache: "no-store"
-    });
-    if (response.ok) {
+    try {
+      const response = await fetch(`/api/sessions?tableCode=${encodeURIComponent(tableCode)}`, {
+        cache: "no-store"
+      });
+      if (!response.ok) return;
       const data = (await response.json()) as TableSession | null;
-      if (data) {
+      if (data && typeof data === "object" && "id" in data) {
         setSession(data);
         setSessionExisted(true);
-        // Auto-enable sendTogether when joining an existing session
         setSendTogether(true);
         const activeOrders = (data.orders || []).filter(
           (item) => !["delivered", "cancelled"].includes(item.status)
@@ -207,43 +239,66 @@ export function MenuClient({
           body: JSON.stringify({ tableCode })
         });
         if (createResponse.ok) {
-          const created = (await createResponse.json()) as TableSession;
-          setSession(created);
-          setSessionExisted(false);
+          const created = (await createResponse.json()) as TableSession | null;
+          if (created && typeof created === "object" && "id" in created) {
+            setSession(created);
+            setSessionExisted(false);
+          }
         }
       }
+    } catch {
+      // ignore session fetch errors silently
     }
   }, [tableCode]);
 
   useEffect(() => {
     let active = true;
-    const initialTimer = window.setTimeout(() => {
-      void loadDailyMenu().finally(() => {
-        if (active) setDailyMenuLoading(false);
-      });
+    const primaryTimer = window.setTimeout(() => {
       void loadCatalog();
-      void loadPromotions();
       void loadSession();
+    }, 40);
+    const cancelSecondary = scheduleWhenIdle(() => {
+      if (!active) return;
+      void loadDailyMenu();
+      void loadPromotions();
       void fetch("/api/drink-flavors", { cache: "no-store" })
         .then((r) => r.json().catch(() => []))
-        .then((data) => { if (active && Array.isArray(data)) setDrinkFlavors(data); })
+        .then((data) => {
+          if (active && Array.isArray(data) && data.length > 0) setDrinkFlavors(data);
+        })
         .catch(() => {});
-    }, 0);
+    }, 900);
     const timer = window.setInterval(() => {
+      if (document.hidden) return;
       void loadDailyMenu();
       void loadCatalog();
       void loadPromotions();
       void loadSession();
-    }, 15000);
+    }, 45000);
     return () => {
       active = false;
-      window.clearTimeout(initialTimer);
+      window.clearTimeout(primaryTimer);
+      cancelSecondary();
       window.clearInterval(timer);
     };
   }, [loadCatalog, loadDailyMenu, loadPromotions, loadSession]);
 
+  const sendChannelPayload = useCallback((payload: AppChannelPayload) => {
+    if (channelRef.current) {
+      void channelRef.current.send(payload);
+      return;
+    }
+    void import("@/lib/order-store")
+      .then(({ connectOrderChannel }) => {
+        const temp = connectOrderChannel(() => undefined);
+        void Promise.resolve(temp.send(payload)).finally(() => temp.close());
+      })
+      .catch(() => undefined);
+  }, []);
+
   useEffect(() => {
-    channelRef.current = connectOrderChannel(({ type, order: incoming, product, dailyMenu: menu }) => {
+    let disposed = false;
+    const handleMessage = ({ type, order: incoming, product, dailyMenu: menu }: AppChannelPayload) => {
       if ((type === "status" || type === "edited") && incoming) {
         const nextOrder = incoming;
         setOrder((current) => {
@@ -283,22 +338,56 @@ export function MenuClient({
             .catch(() => undefined);
         }
       }
-    });
-    return () => channelRef.current?.close();
+    };
+
+    const connect = () => {
+      if (disposed || channelRef.current) return;
+      void import("@/lib/order-store")
+        .then(({ connectOrderChannel }) => {
+          if (disposed || channelRef.current) return;
+          channelRef.current = connectOrderChannel(handleMessage);
+        })
+        .catch(() => undefined);
+    };
+
+    const cancelIdle = scheduleWhenIdle(connect, 1800);
+
+    const onPageHide = () => {
+      channelRef.current?.close();
+      channelRef.current = null;
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) connect();
+    };
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+
+    return () => {
+      disposed = true;
+      cancelIdle();
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+      channelRef.current?.close();
+      channelRef.current = null;
+    };
   }, [loadCatalog, loadDailyMenu, loadSession]);
 
   useEffect(() => {
     if (!order) return;
     if (order.source === "demo") {
       const demoTimer = window.setInterval(() => {
-        const latest = readDemoOrders().find((item) => item.id === order.id);
-        if (latest) {
-          setOrder((current) =>
-            !current || +new Date(latest.updatedAt) >= +new Date(current.updatedAt)
-              ? latest
-              : current
-          );
-        }
+        void import("@/lib/order-store")
+          .then(({ readDemoOrders }) => {
+            const latest = readDemoOrders().find((item) => item.id === order.id);
+            if (latest) {
+              setOrder((current) =>
+                !current || +new Date(latest.updatedAt) >= +new Date(current.updatedAt)
+                  ? latest
+                  : current
+              );
+            }
+          })
+          .catch(() => undefined);
       }, 1500);
       return () => window.clearInterval(demoTimer);
     }
@@ -382,6 +471,10 @@ export function MenuClient({
   }, [cart, generalNotes, tableCode]);
 
   useEffect(() => {
+    if (!hasMountedCategoryRef.current) {
+      hasMountedCategoryRef.current = true;
+      return;
+    }
     const pill = document.querySelector<HTMLElement>(`[data-category-pill="${category}"]`);
     pill?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [category]);
@@ -609,7 +702,7 @@ export function MenuClient({
         throw new Error(payload?.error || "No fue posible registrar el pedido");
       }
       const created = payload as Order;
-      void channelRef.current?.send({ type: "new", order: created });
+      sendChannelPayload({ type: "new", order: created });
       return created;
     } catch (error) {
       const message =
@@ -642,7 +735,7 @@ export function MenuClient({
       timestamp: new Date().toISOString(),
       kind: "assist" as const
     };
-    void channelRef.current?.send({ type: "waiter-call", waiterCall: call });
+    sendChannelPayload({ type: "waiter-call", waiterCall: call });
     window.setTimeout(() => setWaiterCalled(false), 30000);
   }
 
@@ -664,7 +757,7 @@ export function MenuClient({
       kind: "bill" as const,
       paymentPreference
     };
-    void channelRef.current?.send({ type: "waiter-call", waiterCall: call });
+    sendChannelPayload({ type: "waiter-call", waiterCall: call });
     window.setTimeout(() => setBillRequested(false), 30000);
   }
 
@@ -742,7 +835,7 @@ export function MenuClient({
                 <button
                   type="button"
                   onClick={() => setServiceSheetOpen(true)}
-                  className="focus-ring mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[var(--paper)] px-3.5 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.07] transition active:scale-95 dark:bg-neutral-900 dark:text-neutral-100 dark:ring-white/10"
+                  className="focus-ring mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[var(--paper)] px-3.5 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.07] transition active:opacity-80 dark:bg-neutral-900 dark:text-neutral-100 dark:ring-white/10"
                 >
                   <Receipt size={13} className="text-[var(--terracotta)] dark:text-[var(--gold)]" />
                   <span className="tabular-nums">
@@ -825,12 +918,17 @@ export function MenuClient({
                 <button
                   type="button"
                   key={value}
-                  className={`focus-ring flex min-w-0 flex-col items-center justify-center rounded-[0.9rem] px-2.5 py-2 text-center transition-all duration-200 active:scale-[0.98] sm:rounded-full sm:px-4 sm:py-2 ${
+                  className={`focus-ring flex min-w-0 flex-col items-center justify-center rounded-[0.9rem] px-2.5 py-2 text-center transition-all duration-200 active:opacity-85 sm:rounded-full sm:px-4 sm:py-2 ${
                     mode === value
                       ? "bg-[var(--paper)] text-[var(--ink)] shadow-[0_1px_3px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] dark:bg-neutral-800 dark:text-white dark:ring-white/10"
                       : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
                   }`}
-                  onClick={() => setMode(value)}
+                  onClick={() => {
+                    setMode(value);
+                    if (value === "lunch" && dailyMenu === null && dailyMenuLoading) {
+                      void loadDailyMenu();
+                    }
+                  }}
                 >
                   <span className="flex max-w-full items-center gap-1.5 truncate text-[13px] font-semibold leading-tight">
                     <span className="truncate">{label}</span>
@@ -871,7 +969,7 @@ export function MenuClient({
               <button
                 type="button"
                 onClick={repeatLastOrder}
-                className="focus-ring rounded-full bg-neutral-950 px-3.5 py-1.5 text-xs font-semibold text-white transition active:scale-95 dark:bg-white dark:text-neutral-950"
+                className="focus-ring rounded-full bg-neutral-950 px-3.5 py-1.5 text-xs font-semibold text-white transition active:opacity-80 dark:bg-white dark:text-neutral-950"
               >
                 Repetir
               </button>
@@ -912,7 +1010,7 @@ export function MenuClient({
                   <button
                     type="button"
                     aria-label="Limpiar búsqueda"
-                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-black/10 text-neutral-700 transition active:scale-90 dark:bg-white/15 dark:text-neutral-200"
+                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-black/10 text-neutral-700 transition active:opacity-75 dark:bg-white/15 dark:text-neutral-200"
                     onClick={() => setQuery("")}
                   >
                     <X size={13} />
@@ -925,7 +1023,7 @@ export function MenuClient({
                     type="button"
                     key={item}
                     data-category-pill={item}
-                    className={`focus-ring shrink-0 rounded-full px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-all duration-200 active:scale-95 sm:px-4 sm:py-2 ${
+                    className={`focus-ring shrink-0 rounded-full px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors duration-150 active:opacity-80 sm:px-4 sm:py-2 ${
                       !isSearching && category === item
                         ? "bg-neutral-950 font-semibold text-white shadow-xs dark:bg-white dark:text-neutral-950"
                         : "bg-[var(--paper)] text-neutral-700 ring-1 ring-black/[0.06] hover:bg-white dark:bg-neutral-900 dark:text-neutral-200 dark:ring-white/[0.08] dark:hover:bg-neutral-800"
@@ -960,10 +1058,11 @@ export function MenuClient({
 
             {visible.length ? (
               <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-                {visible.map((product) => (
+                {visible.map((product, index) => (
                    <ProductCard
                      key={product.id}
                      product={product}
+                     priority={index < 3}
                      promotion={promotionBySlug.get(product.id)}
                      currentMinutes={serviceMinutes}
                      onOpen={setSelected}
@@ -984,7 +1083,7 @@ export function MenuClient({
                 </p>
                 <button
                   type="button"
-                  className="focus-ring mt-5 rounded-full bg-neutral-950 px-5 py-2.5 text-sm font-semibold text-white transition active:scale-95 dark:bg-white dark:text-neutral-950"
+                  className="focus-ring mt-5 rounded-full bg-neutral-950 px-5 py-2.5 text-sm font-semibold text-white transition active:opacity-80 dark:bg-white dark:text-neutral-950"
                   onClick={() => { setQuery(""); setCategory("Favoritos"); }}
                 >
                   Ver destacados
@@ -1023,7 +1122,7 @@ export function MenuClient({
         <div className="fixed bottom-4 left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 pb-[env(safe-area-inset-bottom)] sm:bottom-6 sm:w-[calc(100%-2rem)]">
           <button
             type="button"
-            className="focus-ring flex w-full items-center justify-between gap-3 rounded-full bg-neutral-950/95 p-2 pl-3 pr-2.5 text-left text-white shadow-[0_12px_32px_rgba(0,0,0,0.24)] ring-1 ring-white/12 backdrop-blur-2xl transition-transform active:scale-[0.98] dark:bg-white/95 dark:text-neutral-950 dark:ring-black/10"
+            className="focus-ring flex w-full items-center justify-between gap-3 rounded-full bg-neutral-950/95 p-2 pl-3 pr-2.5 text-left text-white shadow-[0_12px_32px_rgba(0,0,0,0.24)] ring-1 ring-white/12 backdrop-blur-2xl transition-opacity active:opacity-85 dark:bg-white/95 dark:text-neutral-950 dark:ring-black/10"
             onClick={() => setCartOpen(true)}
           >
             <span className="flex min-w-0 items-center gap-3">
@@ -1068,7 +1167,7 @@ export function MenuClient({
           })}
           <button
             type="button"
-            className="focus-ring flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-3.5 text-sm font-semibold text-white shadow-xl transition active:scale-[0.98] disabled:opacity-50"
+            className="focus-ring flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-3.5 text-sm font-semibold text-white shadow-xl transition active:opacity-85 disabled:opacity-50"
             disabled={sending}
             onClick={sendAllTogether}
           >
@@ -1098,7 +1197,7 @@ export function MenuClient({
           <button
             type="button"
             aria-label="Mesero y cuenta"
-            className={`focus-ring flex items-center gap-2 rounded-full px-3.5 py-2.5 text-xs font-semibold backdrop-blur-2xl transition-all active:scale-95 ${
+            className={`focus-ring flex items-center gap-2 rounded-full px-3.5 py-2.5 text-xs font-semibold backdrop-blur-2xl transition-all active:opacity-80 ${
               waiterCalled || billRequested
                 ? "bg-emerald-600 text-white shadow-[0_6px_20px_rgba(16,185,129,0.3)]"
                 : "bg-[var(--paper)]/92 text-[var(--ink)] shadow-[0_6px_22px_rgba(0,0,0,0.10)] ring-1 ring-black/[0.08] hover:bg-white dark:bg-neutral-900/92 dark:text-white dark:ring-white/12"
@@ -1142,7 +1241,7 @@ export function MenuClient({
               type="button"
               aria-label="Cerrar atención en mesa"
               onClick={() => setServiceSheetOpen(false)}
-              className="focus-ring grid h-10 w-10 place-items-center rounded-full bg-[#eee8dc] text-[var(--ink)] transition active:scale-90 dark:bg-neutral-800 dark:text-neutral-100"
+              className="focus-ring grid h-10 w-10 place-items-center rounded-full bg-[#eee8dc] text-[var(--ink)] transition active:opacity-75 dark:bg-neutral-800 dark:text-neutral-100"
             >
               <X size={18} />
             </button>
@@ -1153,7 +1252,7 @@ export function MenuClient({
               type="button"
               disabled={waiterCalled}
               onClick={callWaiter}
-              className="focus-ring flex w-full items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white p-4 text-left shadow-xs transition active:scale-[0.98] disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-800/80"
+              className="focus-ring flex w-full items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white p-4 text-left shadow-xs transition active:opacity-85 disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-800/80"
             >
               <span className="flex items-center gap-3">
                 <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
@@ -1195,7 +1294,7 @@ export function MenuClient({
                     type="button"
                     disabled={billRequested}
                     onClick={() => requestBill(opt.value)}
-                    className="focus-ring flex flex-col items-center justify-center gap-1 rounded-xl border border-[var(--line)] bg-white px-2 py-3 text-xs font-bold text-[var(--ink)] transition hover:border-[var(--brown)] active:scale-95 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                    className="focus-ring flex flex-col items-center justify-center gap-1 rounded-xl border border-[var(--line)] bg-white px-2 py-3 text-xs font-bold text-[var(--ink)] transition hover:border-[var(--brown)] active:opacity-80 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
                   >
                     <span className="text-lg" aria-hidden="true">{opt.icon}</span>
                     <span>{opt.label}</span>
@@ -1257,14 +1356,14 @@ export function MenuClient({
             <button
               type="button"
               onClick={() => setConfirmAction(null)}
-              className="focus-ring min-h-11 rounded-full border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] transition active:scale-95 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
+              className="focus-ring min-h-11 rounded-full border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] transition active:opacity-80 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
             >
               Cancelar
             </button>
             <button
               type="button"
               onClick={() => confirmAction?.onConfirm()}
-              className={`focus-ring min-h-11 rounded-full px-4 py-2.5 text-sm font-bold text-white transition active:scale-95 ${
+              className={`focus-ring min-h-11 rounded-full px-4 py-2.5 text-sm font-bold text-white transition active:opacity-80 ${
                 confirmAction?.tone === "danger"
                   ? "bg-[#9e3326] hover:bg-[#82281d]"
                   : "bg-neutral-900 hover:opacity-90 dark:bg-white dark:text-neutral-900"
@@ -1311,12 +1410,14 @@ export function MenuClient({
 
 function ProductCard({
   product,
+  priority = false,
   promotion,
   currentMinutes,
   onOpen,
   dailyMenu
 }: {
   product: Product;
+  priority?: boolean;
   promotion?: Promotion;
   currentMinutes: number | null;
   onOpen: (product: Product) => void;
@@ -1342,7 +1443,7 @@ function ProductCard({
     <Card className="menu-card group relative gap-0 overflow-hidden rounded-[1.45rem] border-0 bg-[var(--paper)] py-0 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_4px_14px_rgba(0,0,0,0.03)] ring-1 ring-black/[0.055] dark:bg-neutral-900 dark:ring-white/[0.08] sm:rounded-[1.75rem]">
       <button
         type="button"
-        className="focus-ring flex w-full flex-row-reverse items-center gap-3.5 p-3.5 text-left transition-transform active:scale-[0.985] disabled:opacity-60 sm:block sm:p-0"
+        className="focus-ring flex w-full flex-row-reverse items-center gap-3.5 p-3.5 text-left transition-opacity active:opacity-80 disabled:opacity-60 sm:block sm:p-0"
         onClick={() => onOpen(product)}
         disabled={product.soldOut || !available}
       >
@@ -1352,7 +1453,9 @@ function ProductCard({
             src={product.image}
             alt={product.name}
             category={product.category}
-            className="h-[6.5rem] w-[6.5rem] rounded-[1.1rem] transition-transform duration-500 ease-out sm:aspect-[4/3] sm:h-auto sm:w-full sm:rounded-none sm:group-hover:scale-105"
+            priority={priority}
+            sizes="(max-width: 639px) 112px, (max-width: 1023px) 46vw, 380px"
+            className="h-[6.5rem] w-[6.5rem] rounded-[1.1rem] sm:aspect-[4/3] sm:h-auto sm:w-full sm:rounded-none"
           />
           {promotion && (
             <Badge className="absolute left-1.5 top-1.5 h-auto border-0 bg-amber-400 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-950 shadow-sm sm:left-auto sm:right-3 sm:top-3 sm:px-2.5 sm:py-1 sm:text-[10px]">
@@ -1474,7 +1577,7 @@ function ProductCard({
                   {effectiveFrom}–{effectiveUntil}
                 </span>
               ) : (
-                <span className="grid h-10 w-10 place-items-center rounded-full bg-neutral-950 text-white shadow-sm transition group-hover:scale-105 active:scale-95 dark:bg-white dark:text-neutral-950">
+                <span className="grid h-10 w-10 place-items-center rounded-full bg-neutral-950 text-white shadow-sm transition active:opacity-80 dark:bg-white dark:text-neutral-950">
                   <Plus size={18} strokeWidth={2.3} />
                 </span>
               )}
@@ -1672,6 +1775,7 @@ function ProductDialog({
             src={product.image}
             alt={product.name}
             category={product.category}
+            sizes="(max-width: 639px) 100vw, 512px"
             className="h-52 w-full sm:h-64"
           />
           <div
@@ -1682,7 +1786,7 @@ function ProductDialog({
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/75 via-black/30 to-transparent" />
           <button
             type="button"
-            className="focus-ring absolute right-3.5 top-3.5 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white ring-1 ring-white/20 backdrop-blur-xl transition active:scale-90"
+            className="focus-ring absolute right-3.5 top-3.5 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white ring-1 ring-white/20 backdrop-blur-xl transition active:opacity-80"
             aria-label="Cerrar"
             onClick={onClose}
           >
@@ -1743,7 +1847,7 @@ function ProductDialog({
                       key={item}
                       disabled={unavailable}
                       aria-pressed={selected}
-                      className={`focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-2xl px-4 py-2 text-[13px] font-semibold transition-all active:scale-[0.97] ${
+                      className={`focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-2xl px-4 py-2 text-[13px] font-semibold transition-colors active:opacity-80 ${
                         unavailable
                           ? "cursor-not-allowed opacity-40"
                           : selected
@@ -1785,7 +1889,7 @@ function ProductDialog({
                   const selected = selectedExtras.includes(extra.name);
                   return (
                     <label
-                      className={`flex cursor-pointer items-center justify-between gap-2 rounded-2xl p-3 transition active:scale-[0.99] ${
+                      className={`relative flex cursor-pointer items-center justify-between gap-2 rounded-2xl p-3 transition-colors active:opacity-85 ${
                         selected
                           ? "bg-neutral-950 text-white shadow-xs dark:bg-white dark:text-neutral-950"
                           : "bg-[var(--paper)] text-[var(--ink)] ring-1 ring-black/[0.05] dark:bg-neutral-900 dark:text-neutral-100 dark:ring-white/[0.08]"
@@ -1838,7 +1942,7 @@ function ProductDialog({
             <div className="flex shrink-0 items-center rounded-full bg-black/[0.05] p-1 dark:bg-white/[0.09]">
               <button
                 type="button"
-                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:scale-90 sm:h-11 sm:w-11"
+                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:opacity-75 sm:h-11 sm:w-11"
                 aria-label="Restar"
                 onClick={() => setQuantity((value) => Math.max(1, value - 1))}
               >
@@ -1847,7 +1951,7 @@ function ProductDialog({
               <strong className="w-7 text-center text-sm font-semibold tabular-nums sm:w-9 sm:text-base">{quantity}</strong>
               <button
                 type="button"
-                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:scale-90 sm:h-11 sm:w-11"
+                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:opacity-75 sm:h-11 sm:w-11"
                 aria-label="Sumar"
                 onClick={() => setQuantity((value) => Math.min(10, value + 1))}
               >
@@ -1856,7 +1960,7 @@ function ProductDialog({
             </div>
             <button
               type="button"
-              className="focus-ring flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-950 sm:min-h-13 sm:py-3.5 sm:text-[15px]"
+              className="focus-ring flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-opacity active:opacity-85 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-950 sm:min-h-13 sm:py-3.5 sm:text-[15px]"
               disabled={isComidaALaCarta && !hasCompleteSelection}
               onClick={() => {
                 const chosenExtras = allExtras
@@ -1925,7 +2029,7 @@ function CartDrawer({
           {cart.length > 0 && (
             <button
               type="button"
-              className="focus-ring flex min-h-9 items-center gap-1.5 rounded-full bg-red-500/10 px-3 text-xs font-semibold text-red-700 transition active:scale-95 dark:bg-red-500/15 dark:text-red-300"
+              className="focus-ring flex min-h-9 items-center gap-1.5 rounded-full bg-red-500/10 px-3 text-xs font-semibold text-red-700 transition active:opacity-80 dark:bg-red-500/15 dark:text-red-300"
               onClick={onRequestClear}
             >
               <Trash2 size={13} /> Vaciar
@@ -1933,7 +2037,7 @@ function CartDrawer({
           )}
           <button
             type="button"
-            className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-black/[0.06] text-[var(--ink)] transition active:scale-90 dark:bg-white/[0.1] dark:text-neutral-100"
+            className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-black/[0.06] text-[var(--ink)] transition active:opacity-75 dark:bg-white/[0.1] dark:text-neutral-100"
             aria-label="Cerrar pedido"
             onClick={onClose}
           >
@@ -1988,7 +2092,7 @@ function CartDrawer({
                   <div className="inline-flex items-center rounded-full bg-black/[0.05] p-0.5 dark:bg-white/[0.09]">
                     <button
                       type="button"
-                      className="focus-ring grid h-8 w-8 place-items-center rounded-full text-[var(--ink)] transition active:scale-90"
+                      className="focus-ring grid h-8 w-8 place-items-center rounded-full text-[var(--ink)] transition active:opacity-75"
                       aria-label={`Restar ${item.name}`}
                       onClick={() => {
                         const next = [...cart];
@@ -2004,7 +2108,7 @@ function CartDrawer({
                     </strong>
                     <button
                       type="button"
-                      className="focus-ring grid h-8 w-8 place-items-center rounded-full text-[var(--ink)] transition active:scale-90"
+                      className="focus-ring grid h-8 w-8 place-items-center rounded-full text-[var(--ink)] transition active:opacity-75"
                       aria-label={`Sumar ${item.name}`}
                       onClick={() => {
                         const next = [...cart];
@@ -2032,7 +2136,7 @@ function CartDrawer({
                   key={item.id}
                   type="button"
                   onClick={() => onQuickAdd(item)}
-                  className="focus-ring flex w-44 shrink-0 items-center gap-2.5 rounded-2xl bg-[var(--paper)] p-2 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.05] transition active:scale-95 dark:bg-neutral-900 dark:ring-white/[0.08]"
+                  className="focus-ring flex w-44 shrink-0 items-center gap-2.5 rounded-2xl bg-[var(--paper)] p-2 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.05] transition active:opacity-80 dark:bg-neutral-900 dark:ring-white/[0.08]"
                 >
                   <ProductImage
                     src={item.image}
@@ -2072,7 +2176,7 @@ function CartDrawer({
         </div>
         <button
           type="button"
-          className="focus-ring flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 py-3.5 text-[15px] font-semibold text-white shadow-sm transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-950"
+          className="focus-ring flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 py-3.5 text-[15px] font-semibold text-white shadow-sm transition-opacity active:opacity-85 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-950"
           disabled={sending || cart.length === 0}
           onClick={onSubmit}
         >
@@ -2269,7 +2373,7 @@ function OrderTracking({
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className="focus-ring flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-black/[0.06] px-4 text-xs font-semibold text-[var(--ink)] transition active:scale-95 dark:bg-white/[0.1] dark:text-white"
+                className="focus-ring flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-black/[0.06] px-4 text-xs font-semibold text-[var(--ink)] transition active:opacity-80 dark:bg-white/[0.1] dark:text-white"
                 onClick={() => {
                   const url = `${window.location.origin}/seguimiento/${order.folio}`;
                   void navigator.clipboard.writeText(url);
@@ -2282,7 +2386,7 @@ function OrderTracking({
                 href={`https://wa.me/?text=${encodeURIComponent(`🍽️ Mi pedido en Imperio · ${order.folio}\n${typeof window !== "undefined" ? window.location.origin : ""}/seguimiento/${order.folio}`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="focus-ring flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-[#25D366] px-4 text-xs font-semibold text-white transition active:scale-95"
+                className="focus-ring flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-[#25D366] px-4 text-xs font-semibold text-white transition active:opacity-80"
               >
                 WhatsApp
               </a>
@@ -2297,7 +2401,7 @@ function OrderTracking({
 
           <button
             type="button"
-            className="focus-ring mt-5 flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 text-[15px] font-semibold text-white shadow-sm transition active:scale-[0.98] dark:bg-white dark:text-neutral-950"
+            className="focus-ring mt-5 flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 text-[15px] font-semibold text-white shadow-sm transition active:opacity-85 dark:bg-white dark:text-neutral-950"
             onClick={onOrderAgain}
           >
             <Plus size={18} />
@@ -2367,7 +2471,7 @@ function LunchMenu({
         </p>
         <button
           type="button"
-          className="focus-ring mt-5 rounded-full bg-neutral-950 px-6 py-2.5 text-sm font-semibold text-white transition active:scale-95 dark:bg-white dark:text-neutral-950"
+          className="focus-ring mt-5 rounded-full bg-neutral-950 px-6 py-2.5 text-sm font-semibold text-white transition active:opacity-80 dark:bg-white dark:text-neutral-950"
           onClick={onShowFixed}
         >
           Ver paquetes y carta
@@ -2485,7 +2589,7 @@ function ConfiguredLunchMenu({
                     const selected = selections[course] === option;
                     return (
                       <label
-                        className={`flex cursor-pointer items-center justify-between gap-2.5 rounded-2xl p-3.5 text-sm font-medium transition active:scale-[0.99] ${
+                        className={`relative flex cursor-pointer items-center justify-between gap-2.5 rounded-2xl p-3.5 text-sm font-medium transition-colors active:opacity-85 ${
                           selected
                             ? "bg-neutral-950 font-semibold text-white shadow-xs dark:bg-white dark:text-neutral-950"
                             : "bg-black/[0.04] text-[var(--ink)] hover:bg-black/[0.07] dark:bg-white/[0.06] dark:text-neutral-100 dark:hover:bg-white/[0.1]"
@@ -2533,7 +2637,7 @@ function ConfiguredLunchMenu({
                   const selected = selectedExtras.includes(extra.name);
                   return (
                     <label
-                      className={`flex cursor-pointer items-center justify-between gap-2 rounded-2xl p-3 transition active:scale-[0.99] ${
+                      className={`relative flex cursor-pointer items-center justify-between gap-2 rounded-2xl p-3 transition-colors active:opacity-85 ${
                         selected
                           ? "bg-neutral-950 text-white shadow-xs dark:bg-white dark:text-neutral-950"
                           : "bg-[var(--paper)] text-[var(--ink)] ring-1 ring-black/[0.05] dark:bg-neutral-900 dark:text-neutral-100 dark:ring-white/[0.08]"
@@ -2584,7 +2688,7 @@ function ConfiguredLunchMenu({
             <div className="flex shrink-0 items-center rounded-full bg-black/[0.05] p-1 dark:bg-white/[0.09]">
               <button
                 type="button"
-                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:scale-90 sm:h-11 sm:w-11"
+                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:opacity-75 sm:h-11 sm:w-11"
                 aria-label="Restar comida corrida"
                 onClick={() => setQuantity((value) => Math.max(1, value - 1))}
               >
@@ -2595,7 +2699,7 @@ function ConfiguredLunchMenu({
               </strong>
               <button
                 type="button"
-                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:scale-90 sm:h-11 sm:w-11"
+                className="focus-ring grid h-10 w-10 place-items-center rounded-full text-[var(--ink)] transition active:opacity-75 sm:h-11 sm:w-11"
                 aria-label="Sumar comida corrida"
                 onClick={() => setQuantity((value) => Math.min(10, value + 1))}
               >
@@ -2604,7 +2708,7 @@ function ConfiguredLunchMenu({
             </div>
             <button
               type="button"
-              className="focus-ring flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-950 sm:min-h-13 sm:py-3.5 sm:text-[15px]"
+              className="focus-ring flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white shadow-sm transition active:opacity-85 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-950 sm:min-h-13 sm:py-3.5 sm:text-[15px]"
               disabled={!isOpen || !hasCompleteSelection}
               onClick={() => onAdd(menu, selections, quantity, chosenExtras)}
             >

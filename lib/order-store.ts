@@ -61,45 +61,63 @@ export function connectOrderChannel(
   callback: (payload: AppChannelPayload) => void,
   onStatus?: (status: string) => void
 ) {
-  const supabase = createClient();
-  const channel = supabase
-    .channel("orquideas-orders", {
-      config: { broadcast: { self: true, ack: true } }
-    })
-    .on("broadcast", { event: "order" }, ({ payload }) => callback(payload))
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "orders" },
-      () => callback({ type: "database_change" })
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "products" },
-      () => callback({ type: "database_change" })
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "daily_menus" },
-      () => callback({ type: "database_change" })
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "order_items" },
-      () => callback({ type: "database_change" })
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "table_sessions" },
-      () => callback({ type: "database_change" })
-    );
-  channel.subscribe((status) => onStatus?.(status));
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  if (!url || !key || url.includes("placeholder.supabase.co")) {
+    return {
+      send: async () => "ok" as const,
+      close: () => undefined,
+      channel: null
+    };
+  }
 
-  return {
-    send: (payload: AppChannelPayload) =>
-      channel.send({ type: "broadcast", event: "order", payload }),
-    close: () => {
-      void supabase.removeChannel(channel);
-    },
-    channel
-  };
+  try {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("orquideas-orders", {
+        config: { broadcast: { self: true, ack: true } }
+      })
+      .on("broadcast", { event: "order" }, ({ payload }) => callback(payload))
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        () => callback({ type: "database_change" })
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "products" },
+        () => callback({ type: "database_change" })
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "daily_menus" },
+        () => callback({ type: "database_change" })
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "order_items" },
+        () => callback({ type: "database_change" })
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "table_sessions" },
+        () => callback({ type: "database_change" })
+      );
+    channel.subscribe((status) => onStatus?.(status));
+
+    return {
+      send: (payload: AppChannelPayload) =>
+        channel.send({ type: "broadcast", event: "order", payload }),
+      close: () => {
+        void supabase.removeChannel(channel);
+      },
+      channel
+    };
+  } catch {
+    return {
+      send: async () => "ok" as const,
+      close: () => undefined,
+      channel: null
+    };
+  }
 }

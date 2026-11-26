@@ -86,6 +86,8 @@ async function run() {
           timezoneId: "America/Mexico_City"
         });
         const page = await context.newPage();
+        const pageErrors = [];
+        page.on("pageerror", (err) => pageErrors.push(String(err)));
         // 10:09 AM CDMX (horario activo de comida corrida y desayunos)
         await page.clock.setFixedTime(new Date("2026-11-26T16:09:00Z"));
         // Playwright evalúa rutas en orden inverso (LIFO): genérica primero, específica después
@@ -123,18 +125,26 @@ async function run() {
         await page.waitForSelector("h1", { timeout: 15000 });
         await page.waitForTimeout(500);
 
-        // 1. Cero desbordamiento horizontal y escala 1:1
-        const menuCheck = await page.evaluate(() => ({
-          innerWidth: window.innerWidth,
-          scrollWidth: document.documentElement.scrollWidth,
-          vvWidth: Math.round(window.visualViewport?.width || window.innerWidth),
-          vvScale: window.visualViewport?.scale || 1,
-          vvOffsetLeft: Math.round(window.visualViewport?.offsetLeft || 0)
-        }));
+        // 1. Cero desbordamiento horizontal, escala 1:1 e imágenes WebP responsivas
+        const menuCheck = await page.evaluate(() => {
+          const firstImg = document.querySelector(".menu-photo img");
+          return {
+            innerWidth: window.innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            vvWidth: Math.round(window.visualViewport?.width || window.innerWidth),
+            vvScale: window.visualViewport?.scale || 1,
+            vvOffsetLeft: Math.round(window.visualViewport?.offsetLeft || 0),
+            firstImgSrc: firstImg ? firstImg.currentSrc || firstImg.getAttribute("src") || "" : "",
+            firstImgPriority: firstImg ? firstImg.getAttribute("fetchpriority") : null
+          };
+        });
         assert.equal(menuCheck.scrollWidth, vp.width, `${vp.name}: scrollWidth (${menuCheck.scrollWidth}) != ${vp.width}`);
         assert.equal(menuCheck.innerWidth, vp.width, `${vp.name}: innerWidth (${menuCheck.innerWidth}) != ${vp.width}`);
         assert.equal(menuCheck.vvScale, 1, `${vp.name}: escala inicial alterada (${menuCheck.vvScale})`);
         assert.equal(menuCheck.vvOffsetLeft, 0, `${vp.name}: offsetLeft inicial != 0`);
+        assert.ok(menuCheck.firstImgSrc.endsWith(".webp"), `${vp.name}: imagen no usó WebP (${menuCheck.firstImgSrc})`);
+        assert.equal(menuCheck.firstImgPriority, "high", `${vp.name}: primera imagen sin fetchpriority=high`);
+        assert.equal(pageErrors.length, 0, `${vp.name}: errores JS en página: ${pageErrors.join("; ")}`);
 
         // 2. Búsqueda global entre categorías (buscar "malteada" estando en Desayunos)
         const searchInput = page.locator("input[placeholder*='Busca']").first();
